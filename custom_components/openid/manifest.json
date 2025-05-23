@@ -1,0 +1,10 @@
+{
+  "domain": "openid",
+  "name": "OpenID / OAuth2 authentication",
+  "documentation": "https://github.com/cavefire/hass-openid",
+  "requirements": [],
+  "codeowners": [
+    "@cavefire"
+  ],
+  "version": "1.0"
+}
