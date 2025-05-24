@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from http import HTTPStatus
 import json
 import logging
@@ -144,13 +145,21 @@ class OpenIDCallbackView(HomeAssistantView):
 
         if not code or not state:
             _LOGGER.warning("Missing code/state query parameters – params: %s", params)
-            return Response(status=HTTPStatus.FOUND, headers={"Location": "/"})
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! Missing code or state parameter.",
+            )
 
         # Validate state
         pending = self.hass.data.get("_openid_state", {}).pop(state, None)
         if not pending:
             _LOGGER.warning("Invalid state parameter received: %s", state)
-            return Response(status=HTTPStatus.FOUND, headers={"Location": "/"})
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! Invalid state parameter.",
+            )
 
         conf: dict[str, str] = self.hass.data[DOMAIN]
         redirect_uri = str(
@@ -176,18 +185,20 @@ class OpenIDCallbackView(HomeAssistantView):
             )
         except Exception:
             _LOGGER.exception("Token exchange or user info fetch failed")
-            return Response(
-                status=HTTPStatus.FOUND,
-                headers={"Location": "/"},
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! Could not exchange code for tokens or fetch user info.",
             )
 
         username = user_info.get(conf[CONF_USERNAME_FIELD]) if user_info else None
 
         if not username:
             _LOGGER.warning("No username found in user info")
-            return Response(
-                status=HTTPStatus.FOUND,
-                headers={"Location": "/"},
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! No username found in user info.",
             )
 
         users: list[User] = await self.hass.auth.async_get_users()
@@ -213,42 +224,51 @@ class OpenIDCallbackView(HomeAssistantView):
 
             hassTokens = {
                 "access_token": access_token,
-                "token_type": refresh_token.token_type,
+                "token_type": "Bearer",
                 "refresh_token": refresh_token.token,
                 "ha_auth_provider": DOMAIN,
                 "hassUrl": f"{request.scheme}://{request.host}",
-                "clientId": params.get("client_id", DOMAIN),
+                "client_id": params.get("client_id"),
                 "expires": int(refresh_token.access_token_expiration.total_seconds()),
             }
 
-            url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
+            url = params.get("redirect_uri", "/")
 
             result = self.hass.data["auth"](
-                params.get("client_id", DOMAIN), user.credentials[0]
+                params.get("client_id"), user.credentials[0]
+            )
+
+            resultState = {
+                "hassUrl": hassTokens["hassUrl"],
+                "clientId": hassTokens["client_id"],
+            }
+            resultStateB64 = base64.b64encode(
+                json.dumps(resultState).encode("utf-8")
+            ).decode("utf-8")
+
+            url = str(
+                URL(url).with_query(
+                    {
+                        "auth_callback": 1,
+                        "code": result,
+                        "state": resultStateB64,
+                        "storeToken": "true",
+                    }
+                )
             )
 
             # Mobile app uses homeassistant:// URL scheme
             if str(url).startswith("homeassistant://"):
                 return Response(
                     status=HTTPStatus.FOUND,
-                    headers={
-                        "Location": str(
-                            URL(url).with_query(
-                                {
-                                    "code": result,
-                                    "state": state,
-                                    "storeToken": "true",
-                                }
-                            )
-                        )
-                    },
+                    headers={"Location": url},
                 )
 
             # Web app uses the standard redirect_uri
             # and injects the tokens into the page
             content = content.replace("<<hassTokens>>", json.dumps(hassTokens)).replace(
                 "<<redirect>>",
-                params.get("redirect_uri", "/").replace("auth_callback=1", ""),
+                url,
             )
 
             return Response(
@@ -258,10 +278,13 @@ class OpenIDCallbackView(HomeAssistantView):
             )
 
         _LOGGER.warning("User %s not found in Home Assistant", username)
-        return Response(
-            status=HTTPStatus.UNAUTHORIZED,
-            text=f"<h3>Hello {username}!</h3><p>No user found with your username in Home Assistant. Ask your administrator, to create an account for you and try again.</p><br><a href='/'>Back</a>",
-            content_type="text/html",
+        return _show_error(
+            params,
+            alert_type="error",
+            alert_message=(
+                f"OpenID login succeeded, but user not found in Home Assistant! "
+                f"Please ensure the user '{username}' exists and is enabled for login."
+            ),
         )
 
 
@@ -332,3 +355,27 @@ def _override_authorize_route(hass: HomeAssistant) -> None:
             resource._routes = {"GET": get_handler}  # noqa: SLF001
             _LOGGER.debug("Overrode /auth/authorize route – custom JS injected")
             break
+
+
+def _show_error(params, alert_type, alert_message):
+    # make sure the alert_type and alert_message can be safely displayed
+    alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
+    alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
+    redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
+
+    return Response(
+        status=HTTPStatus.OK,
+        content_type="text/html",
+        text=(
+            "<html><body><script>"
+            f"localStorage.setItem('alertType', '{alert_type}');"
+            f"localStorage.setItem('alertMessage', '{alert_message}');"
+            f"window.location.href = '{redirect_url}';"
+            "</script>"
+            f"<h1>{alert_type}</h1>"
+            f"<p>{alert_message}</p>"
+            f"<p>Redirecting to {redirect_url}...</p>"
+            f"<p><a href='{redirect_url}'>Click here if not redirected</a></p>"
+            "</body></html>"
+        ),
+    )

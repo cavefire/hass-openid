@@ -32,5 +32,17 @@ window.fetch = async (...args) => {
   listNode.appendChild(listItemNode);
   authFlow.append(listNode);
 
+  const alertType = localStorage.getItem('alertType');
+  const alertMessage = localStorage.getItem('alertMessage') || 'No error message provided';
+
+  if (alertType) {
+    const alertNode = document.createElement('ha-alert');
+    alertNode.setAttribute('alert-type', alertType);
+    alertNode.textContent = alertMessage.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    authFlow.prepend(alertNode);
+    localStorage.removeItem('alertType');
+    localStorage.removeItem('alertMessage');
+  }
+
   return response;
 };

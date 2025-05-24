@@ -6,5 +6,6 @@
   "codeowners": [
     "@cavefire"
   ],
-  "version": "1.0"
+  "version": "1.1.0",
+  "issue_tracker": "https://github.com/cavefire/hass-openid/issues"
 }
