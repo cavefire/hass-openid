@@ -1,4 +1,4 @@
-# OCID Integration for Home Assistant
+# OIDC Integration for Home Assistant
 
 This integration allows Home Assistant to authenticate users via an OpenID Connect (OIDC) provider. It supports the authorization code flow and integrates seamlessly with Home Assistant's authentication system.
 
