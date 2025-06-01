@@ -32,17 +32,35 @@ Selection of commonly used OpenID Connect providers:
      configure_url: "https://YOUR_IDP_DOMAIN/.well-known/openid-configuration"  # Replace with your Identity Provider's URL
      username_field: "preferred_username"  # Adjust based on your IdP's user info response
      scope: "openid profile email"
+     block_login: false
    ```
 2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
 3. Restart Home Assistant.
 
 Now sign out of Home Assistant and you should see a `OpenID / OAuth2` option on the login page. Click it to be redirected to your Identity Provider for authentication.
 
+### Disable default login
+
+If you want to disable the default Home Assistant login and only allow OpenID authentication, set `block_login` to `true` in your configuration:
+```yaml
+   openid:
+     ...
+     block_login: true
+     ...
+```
+
+**Make sure the OpenID / OAuth2 login works before blocking the default login!** If you block the default login and the OpenID authentication does not work, you will be locked out of your Home Assistant webinterface and will need to manually edit the `configuration.yaml` file to re-enable the default login.
+
+### Alternative Configuration
+
 If your IdP does not provide a `configure_url`, you can manually specify the endpoints in your configuration:
 ```yaml
+   openid:
+     ...
      authorize_url: "https://your-idp.com/oauth2/authorize"
      token_url: "https://your-idp.com/oauth2/token"
      user_info_url: "https://your-idp.com/oauth2/userinfo"
+     ...
 ```
 
 **username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.

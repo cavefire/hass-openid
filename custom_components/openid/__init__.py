@@ -33,7 +33,9 @@ CONF_CONFIGURE_URL = "configure_url"
 
 CONF_USERNAME_FIELD = "username_field"
 CONF_SCOPE = "scope"
+
 CONF_CREATE_USER = "create_user"
+CONF_BLOCK_LOGIN = "block_login"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +54,7 @@ CONFIG_SCHEMA = vol.Schema(
                     CONF_USERNAME_FIELD, default="preferred_username"
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
+                vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
             }
         )
     },
@@ -89,6 +92,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     # Patch /auth/authorize to inject our JS file.
     _override_authorize_route(hass)
+
+    if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
+        _override_authorize_login_flow(hass)
 
     return True
 
@@ -362,10 +368,55 @@ async def _fetch_user_info(
         return await resp.json()
 
 
+def _override_authorize_login_flow(hass: HomeAssistant) -> None:
+    """Patch the build-in /auth/login_flow page to not return any actual login data."""
+
+    async def get(request: Request) -> Response:
+        content = {
+            "type": "form",
+            "flow_id": None,
+            "handler": [None],
+            "data_schema": [],
+            "errors": {},
+            "description_placeholders": None,
+            "last_step": None,
+            "preview": None,
+            "step_id": "init",
+        }
+
+        return Response(
+            status=HTTPStatus.OK,
+            body=json.dumps(content),
+            content_type="application/json",
+        )
+
+    # Swap out the existing GET handler on /auth/authorize
+    for resource in hass.http.app.router._resources:  # noqa: SLF001
+        if getattr(resource, "canonical", None) == "/auth/login_flow":
+            get_handler = resource._routes.get("GET")  # noqa: SLF001
+            # Replace the underlying coroutine fn.
+            get_handler._handler = get  # noqa: SLF001
+            # Reset the routes map to ensure only our GET exists.
+            resource._routes = {"GET": get_handler, "POST": get_handler}  # noqa: SLF001
+            _LOGGER.debug("Overrode /auth/login_flow route")
+            break
+
+
 def _override_authorize_route(hass: HomeAssistant) -> None:
     """Patch the built-in /auth/authorize page to load our JS helper."""
 
     async def get(request: Request) -> Response:
+        if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
+            get_params = request.rel_url.query
+            client_id = get_params.get(CONF_CLIENT_ID)
+            redirect_uri = get_params.get("redirect_uri", "/")
+
+            return HTTPFound(
+                location=str(
+                    f"/auth/openid/authorize?client_id={client_id}&redirect_uri={redirect_uri}"
+                )
+            )
+
         with open(hass_frontend.where() / "authorize.html", encoding="utf-8") as fptr:  # noqa: ASYNC230
             content = fptr.read()
 
