@@ -24,9 +24,13 @@ from homeassistant.helpers.typing import ConfigType
 
 DOMAIN = "openid"
 
+# Either provide these URLs in the config or use the configure url to discover them
 CONF_AUTHORIZE_URL = "authorize_url"
 CONF_TOKEN_URL = "token_url"
 CONF_USER_INFO_URL = "user_info_url"
+
+CONF_CONFIGURE_URL = "configure_url"
+
 CONF_USERNAME_FIELD = "username_field"
 CONF_SCOPE = "scope"
 CONF_CREATE_USER = "create_user"
@@ -39,9 +43,10 @@ CONFIG_SCHEMA = vol.Schema(
             {
                 vol.Required(CONF_CLIENT_ID): cv.string,
                 vol.Required(CONF_CLIENT_SECRET): cv.string,
-                vol.Required(CONF_AUTHORIZE_URL): cv.url,
-                vol.Required(CONF_TOKEN_URL): cv.url,
-                vol.Required(CONF_USER_INFO_URL): cv.url,
+                vol.Optional(CONF_AUTHORIZE_URL): cv.url,
+                vol.Optional(CONF_TOKEN_URL): cv.url,
+                vol.Optional(CONF_USER_INFO_URL): cv.url,
+                vol.Optional(CONF_CONFIGURE_URL): cv.url,
                 vol.Optional(CONF_SCOPE, default="openid profile email"): cv.string,
                 vol.Optional(
                     CONF_USERNAME_FIELD, default="preferred_username"
@@ -75,6 +80,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         ]
     )
 
+    if CONF_CONFIGURE_URL in hass.data[DOMAIN]:
+        await fetch_urls(hass, config[DOMAIN][CONF_CONFIGURE_URL])
+
     # Register routes
     hass.http.register_view(OpenIDAuthorizeView(hass))
     hass.http.register_view(OpenIDCallbackView(hass))
@@ -83,6 +91,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     _override_authorize_route(hass)
 
     return True
+
+
+async def fetch_urls(hass: HomeAssistant, configure_url: str) -> None:
+    """Fetch the OpenID URLs from the IdP's configuration endpoint."""
+    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
+
+    try:
+        _LOGGER.debug("Fetching OpenID configuration from %s", configure_url)
+        async with session.get(configure_url) as resp:
+            if resp.status != HTTPStatus.OK:
+                raise RuntimeError(f"Configuration endpoint returned {resp.status}")  # noqa: TRY301
+
+            config_data = await resp.json()
+
+        # Update the configuration with fetched URLs
+        hass.data[DOMAIN][CONF_AUTHORIZE_URL] = config_data.get(
+            "authorization_endpoint"
+        )
+        hass.data[DOMAIN][CONF_TOKEN_URL] = config_data.get("token_endpoint")
+        hass.data[DOMAIN][CONF_USER_INFO_URL] = config_data.get("userinfo_endpoint")
+
+        _LOGGER.info("OpenID configuration loaded successfully")
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.error("Failed to fetch OpenID configuration: %s", e)
 
 
 # ---------------------------------------------------------------------------

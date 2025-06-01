@@ -29,9 +29,7 @@ Selection of commonly used OpenID Connect providers:
    openid:
      client_id: YOUR_CLIENT_ID
      client_secret: YOUR_CLIENT_SECRET
-     authorize_url: "https://your-idp.com/oauth2/authorize"
-     token_url: "https://your-idp.com/oauth2/token"
-     user_info_url: "https://your-idp.com/oauth2/userinfo"
+     configure_url: "https://YOUR_IDP_DOMAIN/.well-known/openid-configuration"  # Replace with your Identity Provider's URL
      username_field: "preferred_username"  # Adjust based on your IdP's user info response
      scope: "openid profile email"
    ```
@@ -39,6 +37,13 @@ Selection of commonly used OpenID Connect providers:
 3. Restart Home Assistant.
 
 Now sign out of Home Assistant and you should see a `OpenID / OAuth2` option on the login page. Click it to be redirected to your Identity Provider for authentication.
+
+If your IdP does not provide a `configure_url`, you can manually specify the endpoints in your configuration:
+```yaml
+     authorize_url: "https://your-idp.com/oauth2/authorize"
+     token_url: "https://your-idp.com/oauth2/token"
+     user_info_url: "https://your-idp.com/oauth2/userinfo"
+```
 
 **username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.
 
