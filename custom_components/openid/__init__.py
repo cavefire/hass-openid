@@ -21,6 +21,8 @@ from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+import asyncio
+from pathlib import Path
 
 DOMAIN = "openid"
 
@@ -71,6 +73,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data[DOMAIN] = config[DOMAIN]
     hass.data.setdefault("_openid_state", {})
+
+    # Preload HTML templates
+    authorize_path = hass_frontend.where() / "authorize.html"
+    authorize_template = await asyncio.to_thread(
+        authorize_path.read_text, encoding="utf-8"
+    )
+    token_path = Path(__file__).parent / "token.html"
+    token_template = await asyncio.to_thread(token_path.read_text, encoding="utf-8")
+    hass.data[DOMAIN]["authorize_template"] = authorize_template
+    hass.data[DOMAIN]["token_template"] = token_template
 
     # Serve the custom frontend JS that hooks into the login dialog
     await hass.http.async_register_static_paths(
@@ -255,10 +267,7 @@ class OpenIDCallbackView(HomeAssistantView):
 
             _LOGGER.debug("User %s logged in successfully", username)
 
-            with open(  # noqa: ASYNC230
-                os.path.join(os.path.dirname(__file__), "token.html"), encoding="utf-8"
-            ) as f:
-                content = f.read()
+            content = self.hass.data[DOMAIN]["token_template"]
 
             hassTokens = {
                 "access_token": access_token,
@@ -417,8 +426,7 @@ def _override_authorize_route(hass: HomeAssistant) -> None:
                 )
             )
 
-        with open(hass_frontend.where() / "authorize.html", encoding="utf-8") as fptr:  # noqa: ASYNC230
-            content = fptr.read()
+        content = hass.data[DOMAIN]["authorize_template"]
 
         # Inject script before </head>
         content = content.replace(
