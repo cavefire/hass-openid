@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from http import HTTPStatus
 import json
 import logging
 import os
+from pathlib import Path
 import secrets
 from typing import Any
 
@@ -21,8 +23,6 @@ from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.typing import ConfigType
-import asyncio
-from pathlib import Path
 
 DOMAIN = "openid"
 
@@ -154,13 +154,12 @@ class OpenIDAuthorizeView(HomeAssistantView):
         conf: dict[str, str] = self.hass.data[DOMAIN]
 
         state = secrets.token_urlsafe(24)
-        self.hass.data["_openid_state"][state] = True
 
         params = request.rel_url.query
 
-        redirect_uri = str(
-            request.url.with_path("/auth/openid/callback").with_query(params)
-        )
+        redirect_uri = str(request.url.with_path("/auth/openid/callback"))
+
+        self.hass.data["_openid_state"][state] = params
 
         url = URL(conf[CONF_AUTHORIZE_URL]).with_query(
             {
@@ -203,6 +202,7 @@ class OpenIDCallbackView(HomeAssistantView):
 
         # Validate state
         pending = self.hass.data.get("_openid_state", {}).pop(state, None)
+        params = {**params, **pending}
         if not pending:
             _LOGGER.warning("Invalid state parameter received: %s", state)
             return _show_error(
