@@ -3,41 +3,33 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 from http import HTTPStatus
-import json
 import logging
 import os
 from pathlib import Path
-import secrets
-from typing import Any
 
-from aiohttp.web import HTTPFound, Request, Response
 import hass_frontend
 import voluptuous as vol
-from yarl import URL
 
-from homeassistant.auth.models import User
-from homeassistant.components.http import HomeAssistantView, StaticPathConfig
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-DOMAIN = "openid"
-
-# Either provide these URLs in the config or use the configure url to discover them
-CONF_AUTHORIZE_URL = "authorize_url"
-CONF_TOKEN_URL = "token_url"
-CONF_USER_INFO_URL = "user_info_url"
-
-CONF_CONFIGURE_URL = "configure_url"
-
-CONF_USERNAME_FIELD = "username_field"
-CONF_SCOPE = "scope"
-
-CONF_CREATE_USER = "create_user"
-CONF_BLOCK_LOGIN = "block_login"
+from .const import (
+    CONF_AUTHORIZE_URL,
+    CONF_BLOCK_LOGIN,
+    CONF_CONFIGURE_URL,
+    CONF_CREATE_USER,
+    CONF_SCOPE,
+    CONF_TOKEN_URL,
+    CONF_USER_INFO_URL,
+    CONF_USERNAME_FIELD,
+    DOMAIN,
+)
+from .http_helper import override_authorize_login_flow, override_authorize_route
+from .views import OpenIDAuthorizeView, OpenIDCallbackView
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,10 +95,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.http.register_view(OpenIDCallbackView(hass))
 
     # Patch /auth/authorize to inject our JS file.
-    _override_authorize_route(hass)
+    override_authorize_route(hass)
 
     if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
-        _override_authorize_login_flow(hass)
+        override_authorize_login_flow(hass)
 
     return True
 
@@ -133,340 +125,3 @@ async def fetch_urls(hass: HomeAssistant, configure_url: str) -> None:
         _LOGGER.info("OpenID configuration loaded successfully")
     except Exception as e:  # noqa: BLE001
         _LOGGER.error("Failed to fetch OpenID configuration: %s", e)
-
-
-# ---------------------------------------------------------------------------
-# Views / route handlers
-# ---------------------------------------------------------------------------
-class OpenIDAuthorizeView(HomeAssistantView):
-    """Redirect to the IdP’s authorisation endpoint."""
-
-    name = "api:openid:authorize"
-    url = "/auth/openid/authorize"
-    requires_auth = False
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize the authorisation view."""
-        self.hass = hass
-
-    async def get(self, request: Request) -> Response:
-        """Redirect the browser to the IdP’s authorisation endpoint."""
-        conf: dict[str, str] = self.hass.data[DOMAIN]
-
-        state = secrets.token_urlsafe(24)
-
-        params = request.rel_url.query
-
-        redirect_uri = str(request.url.with_path("/auth/openid/callback"))
-
-        self.hass.data["_openid_state"][state] = params
-
-        url = URL(conf[CONF_AUTHORIZE_URL]).with_query(
-            {
-                "response_type": "code",
-                "client_id": conf[CONF_CLIENT_ID],
-                "redirect_uri": redirect_uri,
-                "scope": conf.get(CONF_SCOPE, ""),
-                "state": state,
-            }
-        )
-
-        _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
-        raise HTTPFound(location=str(url))
-
-
-class OpenIDCallbackView(HomeAssistantView):
-    """Handle the callback from the IdP after authorisation."""
-
-    name = "api:openid:callback"
-    url = "/auth/openid/callback"
-    requires_auth = False
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        """Initialize the callback view."""
-        self.hass = hass
-
-    async def get(self, request: Request) -> Response:
-        """Handle redirect from IdP, exchange code for tokens."""
-        params = request.rel_url.query
-        code = params.get("code")
-        state = params.get("state")
-
-        if not code or not state:
-            _LOGGER.warning("Missing code/state query parameters – params: %s", params)
-            return _show_error(
-                params,
-                alert_type="error",
-                alert_message="OpenID login failed! Missing code or state parameter.",
-            )
-
-        # Validate state
-        pending = self.hass.data.get("_openid_state", {}).pop(state, None)
-        params = {**params, **pending}
-        if not pending:
-            _LOGGER.warning("Invalid state parameter received: %s", state)
-            return _show_error(
-                params,
-                alert_type="error",
-                alert_message="OpenID login failed! Invalid state parameter.",
-            )
-
-        conf: dict[str, str] = self.hass.data[DOMAIN]
-        redirect_uri = str(
-            request.url.with_path("/auth/openid/callback").with_query("")
-        )
-
-        token_data: dict[str, Any] | None = None
-        user_info: dict[str, Any] | None = None
-        try:
-            token_data = await _exchange_code_for_token(
-                hass=self.hass,
-                token_url=conf[CONF_TOKEN_URL],
-                code=code,
-                client_id=conf[CONF_CLIENT_ID],
-                client_secret=conf[CONF_CLIENT_SECRET],
-                redirect_uri=redirect_uri,
-            )
-
-            user_info = await _fetch_user_info(
-                hass=self.hass,
-                user_info_url=conf[CONF_USER_INFO_URL],
-                access_token=token_data.get("access_token"),
-            )
-        except Exception:
-            _LOGGER.exception("Token exchange or user info fetch failed")
-            return _show_error(
-                params,
-                alert_type="error",
-                alert_message="OpenID login failed! Could not exchange code for tokens or fetch user info.",
-            )
-
-        username = user_info.get(conf[CONF_USERNAME_FIELD]) if user_info else None
-
-        if not username:
-            _LOGGER.warning("No username found in user info")
-            return _show_error(
-                params,
-                alert_type="error",
-                alert_message="OpenID login failed! No username found in user info.",
-            )
-
-        users: list[User] = await self.hass.auth.async_get_users()
-        user: User = None
-        for u in users:
-            for cred in u.credentials:
-                if cred.data.get("username") == username:
-                    user = u
-                    break
-
-        if user:
-            refresh_token = await self.hass.auth.async_create_refresh_token(
-                user, client_id=DOMAIN
-            )
-            access_token = self.hass.auth.async_create_access_token(refresh_token)
-
-            _LOGGER.debug("User %s logged in successfully", username)
-
-            content = self.hass.data[DOMAIN]["token_template"]
-
-            hassTokens = {
-                "access_token": access_token,
-                "token_type": "Bearer",
-                "refresh_token": refresh_token.token,
-                "ha_auth_provider": DOMAIN,
-                "hassUrl": f"{request.scheme}://{request.host}",
-                "client_id": params.get("client_id"),
-                "expires": int(refresh_token.access_token_expiration.total_seconds()),
-            }
-
-            url = params.get("redirect_uri", "/")
-
-            result = self.hass.data["auth"](
-                params.get("client_id"), user.credentials[0]
-            )
-
-            resultState = {
-                "hassUrl": hassTokens["hassUrl"],
-                "clientId": hassTokens["client_id"],
-            }
-            resultStateB64 = base64.b64encode(
-                json.dumps(resultState).encode("utf-8")
-            ).decode("utf-8")
-
-            url = str(
-                URL(url).with_query(
-                    {
-                        "auth_callback": 1,
-                        "code": result,
-                        "state": resultStateB64,
-                        "storeToken": "true",
-                    }
-                )
-            )
-
-            # Mobile app uses homeassistant:// URL scheme
-            if str(url).startswith("homeassistant://"):
-                return Response(
-                    status=HTTPStatus.FOUND,
-                    headers={"Location": url},
-                )
-
-            # Web app uses the standard redirect_uri
-            # and injects the tokens into the page
-            content = content.replace("<<hassTokens>>", json.dumps(hassTokens)).replace(
-                "<<redirect>>",
-                url,
-            )
-
-            return Response(
-                status=HTTPStatus.OK,
-                body=content,
-                content_type="text/html",
-            )
-
-        _LOGGER.warning("User %s not found in Home Assistant", username)
-        return _show_error(
-            params,
-            alert_type="error",
-            alert_message=(
-                f"OpenID login succeeded, but user not found in Home Assistant! "
-                f"Please ensure the user '{username}' exists and is enabled for login."
-            ),
-        )
-
-
-async def _exchange_code_for_token(
-    hass: HomeAssistant,
-    *,
-    token_url: str,
-    code: str,
-    client_id: str,
-    client_secret: str,
-    redirect_uri: str,
-) -> dict[str, Any]:
-    """Exchange the *authorisation code* for tokens at the IdP."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri,
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
-
-    _LOGGER.debug("Exchanging code for token at %s", token_url)
-    async with session.post(token_url, data=data) as resp:
-        if resp.status != HTTPStatus.OK:
-            text = await resp.text()
-            raise RuntimeError(f"Token endpoint returned {resp.status}: {text}")
-        return await resp.json()
-
-
-async def _fetch_user_info(
-    hass: HomeAssistant, user_info_url: str, access_token: str
-) -> dict[str, Any]:
-    """Fetch user information from the user info endpoint."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    _LOGGER.debug("Fetching user info from %s", user_info_url)
-    async with session.get(user_info_url, headers=headers) as resp:
-        if resp.status != HTTPStatus.OK:
-            text = await resp.text()
-            raise RuntimeError(f"User info endpoint returned {resp.status}: {text}")
-        return await resp.json()
-
-
-def _override_authorize_login_flow(hass: HomeAssistant) -> None:
-    """Patch the build-in /auth/login_flow page to not return any actual login data."""
-
-    async def get(request: Request) -> Response:
-        content = {
-            "type": "form",
-            "flow_id": None,
-            "handler": [None],
-            "data_schema": [],
-            "errors": {},
-            "description_placeholders": None,
-            "last_step": None,
-            "preview": None,
-            "step_id": "init",
-        }
-
-        return Response(
-            status=HTTPStatus.OK,
-            body=json.dumps(content),
-            content_type="application/json",
-        )
-
-    # Swap out the existing GET handler on /auth/authorize
-    for resource in hass.http.app.router._resources:  # noqa: SLF001
-        if getattr(resource, "canonical", None) == "/auth/login_flow":
-            get_handler = resource._routes.get("GET")  # noqa: SLF001
-            # Replace the underlying coroutine fn.
-            get_handler._handler = get  # noqa: SLF001
-            # Reset the routes map to ensure only our GET exists.
-            resource._routes = {"GET": get_handler, "POST": get_handler}  # noqa: SLF001
-            _LOGGER.debug("Overrode /auth/login_flow route")
-            break
-
-
-def _override_authorize_route(hass: HomeAssistant) -> None:
-    """Patch the built-in /auth/authorize page to load our JS helper."""
-
-    async def get(request: Request) -> Response:
-        if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
-            get_params = request.rel_url.query
-            client_id = get_params.get(CONF_CLIENT_ID)
-            redirect_uri = get_params.get("redirect_uri", "/")
-
-            return HTTPFound(
-                location=str(
-                    f"/auth/openid/authorize?client_id={client_id}&redirect_uri={redirect_uri}"
-                )
-            )
-
-        content = hass.data[DOMAIN]["authorize_template"]
-
-        # Inject script before </head>
-        content = content.replace(
-            "</head>",
-            '<script src="/openid/authorize.js"></script></head>',
-        )
-
-        return Response(status=HTTPStatus.OK, body=content, content_type="text/html")
-
-    # Swap out the existing GET handler on /auth/authorize
-    for resource in hass.http.app.router._resources:  # noqa: SLF001
-        if getattr(resource, "canonical", None) == "/auth/authorize":
-            get_handler = resource._routes.get("GET")  # noqa: SLF001
-            # Replace the underlying coroutine fn.
-            get_handler._handler = get  # noqa: SLF001
-            # Reset the routes map to ensure only our GET exists.
-            resource._routes = {"GET": get_handler}  # noqa: SLF001
-            _LOGGER.debug("Overrode /auth/authorize route – custom JS injected")
-            break
-
-
-def _show_error(params, alert_type, alert_message):
-    # make sure the alert_type and alert_message can be safely displayed
-    alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
-    alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
-    redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
-
-    return Response(
-        status=HTTPStatus.OK,
-        content_type="text/html",
-        text=(
-            "<html><body><script>"
-            f"localStorage.setItem('alertType', '{alert_type}');"
-            f"localStorage.setItem('alertMessage', '{alert_message}');"
-            f"window.location.href = '{redirect_url}';"
-            "</script>"
-            f"<h1>{alert_type}</h1>"
-            f"<p>{alert_message}</p>"
-            f"<p>Redirecting to {redirect_url}...</p>"
-            f"<p><a href='{redirect_url}'>Click here if not redirected</a></p>"
-            "</body></html>"
-        ),
-    )
