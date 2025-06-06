@@ -25,7 +25,7 @@ Selection of commonly used OpenID Connect providers:
 ## Configuration
 
 Firstly you need to configure your IdP. Create an OpenID/OAuth2 provider according to the documentation of your provider.
-Note the client id and client secret as you will need it setting up this integration in Home Assistant. Your provider should be configured to have this regex as the callback url: `^(http:\/\/hass\.company\:8123)\/auth\/openid\/callback.*`
+Note the client id and client secret as you will need it setting up this integration in Home Assistant. Your provider should be configured to have this callback URL: `https://YOUR_HOME_ASSISTANT_DOMAIN/auth/openid/callback`.
 
 1. Add the following configuration to your `configuration.yaml` file:
    ```yaml
