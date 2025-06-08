@@ -66,6 +66,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.data[DOMAIN] = config[DOMAIN]
     hass.data.setdefault("_openid_state", {})
 
+    if CONF_CONFIGURE_URL in hass.data[DOMAIN]:
+        try:
+            await fetch_urls(hass, config[DOMAIN][CONF_CONFIGURE_URL])
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.error("Failed to fetch OpenID configuration: %s", e)
+            return False
+
     # Preload HTML templates
     authorize_path = hass_frontend.where() / "authorize.html"
     authorize_template = await asyncio.to_thread(
@@ -86,9 +93,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         ]
     )
-
-    if CONF_CONFIGURE_URL in hass.data[DOMAIN]:
-        await fetch_urls(hass, config[DOMAIN][CONF_CONFIGURE_URL])
 
     # Register routes
     hass.http.register_view(OpenIDAuthorizeView(hass))
