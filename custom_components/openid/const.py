@@ -14,3 +14,4 @@ CONF_SCOPE = "scope"
 
 CONF_CREATE_USER = "create_user"
 CONF_BLOCK_LOGIN = "block_login"
+CONF_USE_HEADER_AUTH = "use_header_auth"

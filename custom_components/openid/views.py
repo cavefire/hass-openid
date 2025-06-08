@@ -19,6 +19,7 @@ from .const import (
     CONF_AUTHORIZE_URL,
     CONF_SCOPE,
     CONF_TOKEN_URL,
+    CONF_USE_HEADER_AUTH,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
     DOMAIN,
@@ -116,6 +117,7 @@ class OpenIDCallbackView(HomeAssistantView):
                 client_id=conf[CONF_CLIENT_ID],
                 client_secret=conf[CONF_CLIENT_SECRET],
                 redirect_uri=redirect_uri,
+                use_header_auth=conf.get(CONF_USE_HEADER_AUTH, True),
             )
 
             user_info = await fetch_user_info(
