@@ -40,6 +40,10 @@ Note the client id and client secret as you will need it setting up this integra
 2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
 3. Restart Home Assistant.
 
+
+**username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.
+
+
 Now sign out of Home Assistant and you should see a `OpenID / OAuth2` option on the login page. Click it to be redirected to your Identity Provider for authentication.
 
 ### Disable default login
@@ -66,8 +70,6 @@ If your IdP does not provide a `configure_url`, you can manually specify the end
      ...
 ```
 
-**username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.
-
 ## Troubleshooting
 - Verify that the `client_id`, `client_secret`, and URLs in your configuration are correct.
 - Check the Home Assistant logs for any errors or warnings related to the OpenID integration.
@@ -78,6 +80,13 @@ If your IdP does not provide a `configure_url`, you can manually specify the end
       default: warning
       logs:
         custom_components.openid: debug
+    ```
+- If your IdP does not allow client id and client secret to be passed as "Authorization" header, you can set `use_auth_header` to `false` in your configuration:
+    ```yaml
+    openid:
+      ...
+      use_auth_header: false
+      ...
     ```
 
 ## Important Notes
