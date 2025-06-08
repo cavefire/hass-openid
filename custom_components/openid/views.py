@@ -47,8 +47,8 @@ class OpenIDAuthorizeView(HomeAssistantView):
         state = secrets.token_urlsafe(24)
 
         params = request.rel_url.query
-
-        redirect_uri = str(request.url.with_path("/auth/openid/callback"))
+        base_url = params.get("base_url", "")
+        redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
         self.hass.data["_openid_state"][state] = params
 

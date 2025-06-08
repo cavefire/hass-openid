@@ -25,8 +25,10 @@ window.fetch = async (...args) => {
     const urlParams = new URLSearchParams(window.location.search);
     const clientId = encodeURIComponent(urlParams.get('client_id'));
     const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
+    const baseUrl = window.location.origin;
 
-    window.location.href = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}`;
+    const encodedUrl = encodeURIComponent(`/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}`);
+    window.location.href = decodeURIComponent(encodedUrl);
   };
 
   listNode.appendChild(listItemNode);
