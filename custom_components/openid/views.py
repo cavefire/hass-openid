@@ -103,9 +103,8 @@ class OpenIDCallbackView(HomeAssistantView):
             )
 
         conf: dict[str, str] = self.hass.data[DOMAIN]
-        redirect_uri = str(
-            request.url.with_path("/auth/openid/callback").with_query("")
-        )
+        base_url = params.get("base_url", "")
+        redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
         token_data: dict[str, Any] | None = None
         user_info: dict[str, Any] | None = None
@@ -166,7 +165,7 @@ class OpenIDCallbackView(HomeAssistantView):
                 "token_type": "Bearer",
                 "refresh_token": refresh_token.token,
                 "ha_auth_provider": DOMAIN,
-                "hassUrl": f"{request.scheme}://{request.host}",
+                "hassUrl": base_url,
                 "client_id": params.get("client_id"),
                 "expires": int(refresh_token.access_token_expiration.total_seconds()),
             }
