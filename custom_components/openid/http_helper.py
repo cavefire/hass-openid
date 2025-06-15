@@ -54,22 +54,39 @@ def override_authorize_route(hass: HomeAssistant) -> None:
     async def get(request: Request) -> Response:
         if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
             get_params = request.rel_url.query
-            client_id = get_params.get(CONF_CLIENT_ID)
+            client_id = get_params.get(CONF_CLIENT_ID, "")
             redirect_uri = get_params.get("redirect_uri", "/")
+            
+            client_id_json = json.dumps(client_id)
+            redirect_uri_json = json.dumps(redirect_uri)
+            
+            content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Redirecting...</title>
+            </head>
+            <body>
+                <script>
+                    const baseUrl = window.location.origin;
+                    const clientId = {client_id_json};
+                    const redirectUri = {redirect_uri_json};
+                    
+                    const targetUrl = `/auth/openid/authorize?client_id=${{encodeURIComponent(clientId)}}&redirect_uri=${{encodeURIComponent(redirectUri)}}&base_url=${{encodeURIComponent(baseUrl)}}`;
+                    window.location.href = targetUrl;
+                </script>
+                <p>Redirecting...</p>
+            </body>
+            </html>
+            """  
+        else:
+            content = hass.data[DOMAIN]["authorize_template"]
 
-            return HTTPFound(
-                location=str(
-                    f"/auth/openid/authorize?client_id={client_id}&redirect_uri={redirect_uri}"
-                )
+            # Inject script before </head>
+            content = content.replace(
+                "</head>",
+                '<script src="/openid/authorize.js"></script></head>',
             )
-
-        content = hass.data[DOMAIN]["authorize_template"]
-
-        # Inject script before </head>
-        content = content.replace(
-            "</head>",
-            '<script src="/openid/authorize.js"></script></head>',
-        )
 
         return Response(status=HTTPStatus.OK, body=content, content_type="text/html")
 
