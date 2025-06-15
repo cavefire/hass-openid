@@ -4,9 +4,8 @@ from http import HTTPStatus
 import json
 import logging
 
-from aiohttp.web import HTTPFound, Request, Response
+from aiohttp.web import Request, Response
 
-from homeassistant.const import CONF_CLIENT_ID
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_BLOCK_LOGIN, DOMAIN
@@ -28,6 +27,7 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
             "last_step": None,
             "preview": None,
             "step_id": "init",
+            "block_login": hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False),
         }
 
         return Response(
@@ -52,17 +52,6 @@ def override_authorize_route(hass: HomeAssistant) -> None:
     """Patch the built-in /auth/authorize page to load our JS helper."""
 
     async def get(request: Request) -> Response:
-        if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
-            get_params = request.rel_url.query
-            client_id = get_params.get(CONF_CLIENT_ID)
-            redirect_uri = get_params.get("redirect_uri", "/")
-
-            return HTTPFound(
-                location=str(
-                    f"/auth/openid/authorize?client_id={client_id}&redirect_uri={redirect_uri}"
-                )
-            )
-
         content = hass.data[DOMAIN]["authorize_template"]
 
         # Inject script before </head>
