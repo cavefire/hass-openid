@@ -19,13 +19,15 @@ window.fetch = async (...args) => {
     return response;
   }
 
+  const openIdText = responseBody.openid_text;
+
   const authFlow = document.getElementsByClassName('card-content')[0];
 
   const listNode = document.createElement('ha-list');
   const listItemNode = document.createElement('ha-list-item');
   listItemNode.setAttribute('hasmeta', '');
   listItemNode.setAttribute('mwc-list-item', '');
-  listItemNode.innerHTML = 'OpenID / OAuth2 Authentication <ha-icon-next slot="meta"></ha-icon-next>';
+  listItemNode.innerHTML = `${openIdText} <ha-icon-next slot="meta"></ha-icon-next>`;
   listItemNode.onclick = redirect_openid_login;
 
   listNode.appendChild(listItemNode);

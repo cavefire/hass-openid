@@ -22,6 +22,7 @@ from .const import (
     CONF_BLOCK_LOGIN,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
+    CONF_OPENID_TEXT,
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USER_INFO_URL,
@@ -49,6 +50,9 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
+                vol.Optional(
+                    CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
+                ): cv.string,
             }
         )
     },
@@ -101,8 +105,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # Patch /auth/authorize to inject our JS file.
     override_authorize_route(hass)
 
-    if hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False):
-        override_authorize_login_flow(hass)
+    # Patch the login flow to include additional OpenID data.
+    override_authorize_login_flow(hass)
 
     return True
 
