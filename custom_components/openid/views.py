@@ -6,6 +6,7 @@ import json
 import logging
 import secrets
 from typing import Any
+import urllib.parse
 
 from aiohttp.web import HTTPFound, Request, Response
 from yarl import URL
@@ -52,18 +53,18 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
         self.hass.data["_openid_state"][state] = params
 
-        url = URL(conf[CONF_AUTHORIZE_URL]).with_query(
-            {
-                "response_type": "code",
-                "client_id": conf[CONF_CLIENT_ID],
-                "redirect_uri": redirect_uri,
-                "scope": conf.get(CONF_SCOPE, ""),
-                "state": state,
-            }
-        )
+        query = {
+            "response_type": "code",
+            "client_id": conf[CONF_CLIENT_ID],
+            "redirect_uri": redirect_uri,
+            "scope": conf.get(CONF_SCOPE, ""),
+            "state": state,
+        }
+        encoded_query = urllib.parse.urlencode(query)
+        url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
-        raise HTTPFound(location=str(url))
+        return Response(status=302, headers={"Location": url})
 
 
 class OpenIDCallbackView(HomeAssistantView):
