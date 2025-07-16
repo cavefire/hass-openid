@@ -147,7 +147,7 @@ class OpenIDCallbackView(HomeAssistantView):
         user: User = None
         for u in users:
             for cred in u.credentials:
-                if cred.data.get("username") == username:
+                if cred.data.get("username") and cred.data.get("username").lower() == username.lower():
                     user = u
                     break
 
