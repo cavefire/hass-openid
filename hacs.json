@@ -1,5 +1,5 @@
 {
-  "name": "openid",
+  "name": "Simple OpenID Connect (OIDC / SSO)",
   "homeassistant": "2025.3.0",
   "render_readme": true
 }
