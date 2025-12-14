@@ -6,7 +6,6 @@ import asyncio
 from http import HTTPStatus
 import logging
 import os
-from pathlib import Path
 
 import hass_frontend
 import voluptuous as vol
@@ -17,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+from .auth_provider import async_register_auth_provider
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
@@ -82,10 +82,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     authorize_template = await asyncio.to_thread(
         authorize_path.read_text, encoding="utf-8"
     )
-    token_path = Path(__file__).parent / "token.html"
-    token_template = await asyncio.to_thread(token_path.read_text, encoding="utf-8")
     hass.data[DOMAIN]["authorize_template"] = authorize_template
-    hass.data[DOMAIN]["token_template"] = token_template
 
     # Serve the custom frontend JS that hooks into the login dialog
     await hass.http.async_register_static_paths(
@@ -107,6 +104,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     # Patch the login flow to include additional OpenID data.
     override_authorize_login_flow(hass)
+
+    provider = await async_register_auth_provider(hass)
+    hass.data[DOMAIN]["auth_provider"] = provider
 
     return True
 
