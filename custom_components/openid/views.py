@@ -1,23 +1,30 @@
 """OpenID Connect views for Home Assistant."""
 
+from __future__ import annotations
+
 import base64
 from http import HTTPStatus
 import json
 import logging
 import secrets
 from typing import Any
-import urllib.parse
+from urllib.parse import urlencode
 
-from aiohttp.web import HTTPFound, Request, Response
+from aiohttp.web import Request, Response
 from yarl import URL
 
+from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.auth.models import User
+from homeassistant.components.auth import create_auth_code
 from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.person import DOMAIN as PERSON_DOMAIN, async_create_person
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
+from homeassistant.util import slugify
 
 from .const import (
     CONF_AUTHORIZE_URL,
+    CONF_CREATE_USER,
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USE_HEADER_AUTH,
@@ -60,7 +67,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             "scope": conf.get(CONF_SCOPE, ""),
             "state": state,
         }
-        encoded_query = urllib.parse.urlencode(query)
+        encoded_query = urlencode(query)
         url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
@@ -117,13 +124,22 @@ class OpenIDCallbackView(HomeAssistantView):
                 client_id=conf[CONF_CLIENT_ID],
                 client_secret=conf[CONF_CLIENT_SECRET],
                 redirect_uri=redirect_uri,
-                use_header_auth=conf.get(CONF_USE_HEADER_AUTH, True),
+                use_header_auth=bool(conf.get(CONF_USE_HEADER_AUTH, True)),
             )
+
+            access_token = token_data.get("access_token")
+            if not isinstance(access_token, str):
+                _LOGGER.error("Token response missing access token")
+                return _show_error(
+                    params,
+                    alert_type="error",
+                    alert_message="OpenID login failed! Access token missing in provider response.",
+                )
 
             user_info = await fetch_user_info(
                 hass=self.hass,
                 user_info_url=conf[CONF_USER_INFO_URL],
-                access_token=token_data.get("access_token"),
+                access_token=access_token,
             )
         except Exception:
             _LOGGER.exception("Token exchange or user info fetch failed")
@@ -143,88 +159,223 @@ class OpenIDCallbackView(HomeAssistantView):
                 alert_message="OpenID login failed! No username found in user info.",
             )
 
-        users: list[User] = await self.hass.auth.async_get_users()
-        user: User = None
-        for u in users:
-            for cred in u.credentials:
-                if cred.data.get("username").lower() == username.lower():
-                    user = u
-                    break
+        provider = self.hass.data[DOMAIN].get("auth_provider")
 
-        if user:
-            refresh_token = await self.hass.auth.async_create_refresh_token(
-                user, client_id=DOMAIN
-            )
-            access_token = self.hass.auth.async_create_access_token(refresh_token)
-
-            _LOGGER.debug("User %s logged in successfully", username)
-
-            content = self.hass.data[DOMAIN]["token_template"]
-
-            hassTokens = {
-                "access_token": access_token,
-                "token_type": "Bearer",
-                "refresh_token": refresh_token.token,
-                "ha_auth_provider": DOMAIN,
-                "hassUrl": base_url,
-                "client_id": params.get("client_id"),
-                "expires": int(refresh_token.access_token_expiration.total_seconds()),
-            }
-
-            url = params.get("redirect_uri", "/")
-
-            result = self.hass.data["auth"](
-                params.get("client_id"), user.credentials[0]
+        if provider is None:
+            _LOGGER.error("OpenID auth provider not registered")
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! Auth provider not available.",
             )
 
-            resultState = {
-                "hassUrl": hassTokens["hassUrl"],
-                "clientId": hassTokens["client_id"],
-            }
-            resultStateB64 = base64.b64encode(
-                json.dumps(resultState).encode("utf-8")
-            ).decode("utf-8")
+        new_credential_fields = {
+            key: value
+            for key, value in (
+                ("username", username),
+                ("name", user_info.get("name") or user_info.get("preferred_username")),
+                ("email", user_info.get("email")),
+                ("subject", user_info.get("sub")),
+                ("preferred_username", user_info.get("preferred_username")),
+            )
+            if value
+        }
 
-            url = str(
-                URL(url).with_query(
-                    {
-                        "auth_callback": 1,
-                        "code": result,
-                        "state": resultStateB64,
-                        "storeToken": "true",
-                    }
-                )
+        try:
+            credentials = await provider.async_get_or_create_credentials(
+                new_credential_fields
+            )
+        except ValueError as err:  # pragma: no cover - defensive guard
+            _LOGGER.error("Failed to obtain credentials: %s", err)
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message="OpenID login failed! Could not map credentials.",
             )
 
-            # Mobile app uses homeassistant:// URL scheme
-            if str(url).startswith("homeassistant://"):
-                return Response(
-                    status=HTTPStatus.FOUND,
-                    headers={"Location": url},
-                )
+        credential_data = dict(credentials.data)
+        credential_data.update(new_credential_fields)
 
-            # Web app uses the standard redirect_uri
-            # and injects the tokens into the page
-            content = content.replace("<<hassTokens>>", json.dumps(hassTokens)).replace(
-                "<<redirect>>",
-                url,
-            )
-
-            return Response(
-                status=HTTPStatus.OK,
-                body=content,
-                content_type="text/html",
-            )
-
-        _LOGGER.warning("User %s not found in Home Assistant", username)
-        return _show_error(
-            params,
-            alert_type="error",
-            alert_message=(
-                f"OpenID login succeeded, but user not found in Home Assistant! "
-                f"Please ensure the user '{username}' exists and is enabled for login."
-            ),
+        user: User | None = await self.hass.auth.async_get_user_by_credentials(
+            credentials
         )
+
+        if user is None and (username_value := credential_data.get("username")):
+            existing_user = await self._async_find_user_by_username(username_value)
+            if existing_user is not None:
+                try:
+                    if credentials.is_new:
+                        await self.hass.auth.async_link_user(existing_user, credentials)
+                        credentials.is_new = False
+                except ValueError as err:
+                    _LOGGER.error(
+                        "Failed to link credentials to existing user %s: %s",
+                        username_value,
+                        err,
+                    )
+                else:
+                    credential_data.setdefault("openid_groups_initialized", True)
+                    user = existing_user
+
+        if user is None and self.hass.data[DOMAIN].get(CONF_CREATE_USER, False):
+            try:
+                user = await self.hass.auth.async_get_or_create_user(credentials)
+            except ValueError as err:
+                _LOGGER.error("Failed to create user %s: %s", username, err)
+            else:
+                if user:
+                    _LOGGER.info("Created Home Assistant user %s via OpenID", username)
+
+        if user is None:
+            _LOGGER.warning("User %s not found in Home Assistant", username)
+            return _show_error(
+                params,
+                alert_type="error",
+                alert_message=(
+                    "OpenID login succeeded, but user was not created in Home Assistant. "
+                    "Ask your administrator to enable automatic user creation or to add your account."
+                ),
+            )
+
+        display_name = (
+            credential_data.get("name")
+            or credential_data.get("preferred_username")
+            or credential_data.get("username")
+        )
+        if display_name and not user.name:
+            await self.hass.auth.async_update_user(user, name=display_name)
+
+        groups_initialized = credential_data.get("openid_groups_initialized", False)
+        if not groups_initialized:
+            credential_data["openid_groups_initialized"] = True
+            if not user.is_owner:
+                current_group_ids = [group.id for group in user.groups]
+                new_group_ids = [
+                    gid for gid in current_group_ids if gid != GROUP_ID_ADMIN
+                ]
+                changed = len(new_group_ids) != len(current_group_ids)
+                if GROUP_ID_USER not in new_group_ids:
+                    new_group_ids.append(GROUP_ID_USER)
+                    changed = True
+                if changed:
+                    await self.hass.auth.async_update_user(
+                        user, group_ids=new_group_ids
+                    )
+
+        self.hass.auth.async_update_user_credentials_data(credentials, credential_data)
+
+        await self._ensure_person_for_user(user, credential_data)
+
+        client_id = params.get("client_id")
+        if client_id is None:
+            _LOGGER.warning(
+                "Missing client_id in authorize callback, defaulting to domain"
+            )
+            client_id = DOMAIN
+
+        _LOGGER.debug(
+            "User %s authenticated via OpenID, client_id=%s, redirect_uri=%s",
+            username,
+            client_id,
+            params.get("redirect_uri"),
+        )
+
+        url = params.get("redirect_uri", "/")
+
+        result = create_auth_code(self.hass, client_id, credentials)
+
+        _LOGGER.debug(
+            "Created auth code %s for client_id=%s, credentials=%s",
+            result[:8] + "...",
+            client_id,
+            credentials.id,
+        )
+
+        result_state = {
+            "hassUrl": base_url,
+            "clientId": client_id,
+        }
+        result_state_b64 = base64.b64encode(
+            json.dumps(result_state).encode("utf-8")
+        ).decode("utf-8")
+
+        url = str(
+            URL(url).with_query(
+                {
+                    "auth_callback": 1,
+                    "code": result,
+                    "state": result_state_b64,
+                    "storeToken": "true",
+                }
+            )
+        )
+
+        return Response(status=HTTPStatus.FOUND, headers={"Location": url})
+
+    async def _ensure_person_for_user(
+        self, user: User, credential_data: dict[str, Any]
+    ) -> None:
+        """Create a person entry for the user if needed."""
+        if PERSON_DOMAIN not in self.hass.data:
+            _LOGGER.debug("Person component not loaded; skipping person creation")
+            return
+
+        _, storage_collection, _ = self.hass.data[PERSON_DOMAIN]
+        items = storage_collection.async_items()
+
+        if any(item.get("user_id") == user.id for item in items):
+            return
+
+        candidate_name = (
+            credential_data.get("name")
+            or credential_data.get("preferred_username")
+            or credential_data.get("username")
+            or user.name
+        )
+
+        if candidate_name:
+            slug_candidate = slugify(candidate_name)
+            for item in items:
+                item_name = item.get("name")
+                item_id = item.get("id")
+                if (
+                    isinstance(item_name, str)
+                    and item_name.lower() == candidate_name.lower()
+                ) or (
+                    slug_candidate
+                    and isinstance(item_id, str)
+                    and item_id == slug_candidate
+                ):
+                    if item.get("user_id") != user.id:
+                        await storage_collection.async_update_item(
+                            item["id"],
+                            {"user_id": user.id},
+                        )
+                    return
+
+        person_name = candidate_name or user.id
+
+        try:
+            await async_create_person(self.hass, person_name, user_id=user.id)
+        except ValueError as err:
+            _LOGGER.warning("Unable to create person for user %s: %s", user.id, err)
+
+    async def _async_find_user_by_username(self, username: str) -> User | None:
+        """Return existing user matching username if available."""
+        username_lower = username.lower()
+        for candidate in await self.hass.auth.async_get_users():
+            if candidate.name and candidate.name.lower() == username_lower:
+                return candidate
+
+            for existing_credentials in candidate.credentials:
+                stored_username = existing_credentials.data.get("username")
+                if (
+                    isinstance(stored_username, str)
+                    and stored_username.lower() == username_lower
+                ):
+                    return candidate
+
+        return None
 
 
 def _show_error(params, alert_type, alert_message):
