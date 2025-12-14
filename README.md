@@ -37,6 +37,7 @@ Note the client id and client secret as you will need it setting up this integra
      scope: "openid profile email"
      block_login: false
      openid_text: "Login with OpenID / OAuth2"  # Text to display on the login page
+     create_user: true  # Automatically create users on first login
    ```
 2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
 3. Restart Home Assistant.

@@ -5,6 +5,7 @@
     "@cavefire"
   ],
   "dependencies": [
+    "auth",
     "http"
   ],
   "documentation": "https://github.com/cavefire/hass-openid",

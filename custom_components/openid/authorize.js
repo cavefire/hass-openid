@@ -20,27 +20,19 @@ window.fetch = async (...args) => {
   }
 
   const openIdText = responseBody.openid_text;
+  ensure_openid_button(openIdText);
 
   const authFlow = document.getElementsByClassName('card-content')[0];
-
-  const listNode = document.createElement('ha-list');
-  const listItemNode = document.createElement('ha-list-item');
-  listItemNode.setAttribute('hasmeta', '');
-  listItemNode.setAttribute('mwc-list-item', '');
-  listItemNode.innerHTML = `${openIdText} <ha-icon-next slot="meta"></ha-icon-next>`;
-  listItemNode.onclick = redirect_openid_login;
-
-  listNode.appendChild(listItemNode);
-  authFlow.append(listNode);
-
   const alertType = localStorage.getItem('alertType');
   const alertMessage = localStorage.getItem('alertMessage') || 'No error message provided';
 
   if (alertType) {
-    const alertNode = document.createElement('ha-alert');
-    alertNode.setAttribute('alert-type', alertType);
-    alertNode.textContent = alertMessage.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-    authFlow.prepend(alertNode);
+    if (authFlow) {
+      const alertNode = document.createElement('ha-alert');
+      alertNode.setAttribute('alert-type', alertType);
+      alertNode.textContent = alertMessage.replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      authFlow.prepend(alertNode);
+    }
     localStorage.removeItem('alertType');
     localStorage.removeItem('alertMessage');
   }
@@ -55,4 +47,88 @@ function redirect_openid_login() {
   const baseUrl = encodeURIComponent(window.location.origin);
 
   window.location.href = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}`;
+}
+
+function ensure_openid_button(openIdText) {
+  const candidateSelector = 'ha-list-item, mwc-list-item';
+
+  const resolveButton = () => {
+    const collectCandidates = (root) => {
+      if (!root || !root.querySelectorAll) {
+        return [];
+      }
+
+      const directMatches = Array.from(root.querySelectorAll(candidateSelector));
+
+      const nestedMatches = [];
+      Array.from(root.querySelectorAll('*')).forEach((node) => {
+        if (node.shadowRoot) {
+          nestedMatches.push(...collectCandidates(node.shadowRoot));
+        }
+      });
+
+      return directMatches.concat(nestedMatches);
+    };
+
+    const candidates = collectCandidates(document);
+
+    const button = candidates.find((item) => {
+      if (!item) {
+        return false;
+      }
+
+      if (item.dataset && item.dataset.openidButton === '1') {
+        return item;
+      }
+
+      const providerId = item.dataset?.providerId || item.getAttribute('data-provider-id') || item.value || '';
+      const text = (item.textContent || '').toLowerCase();
+
+      return providerId.toLowerCase().includes('openid') || text.includes('openid');
+    });
+
+    if (!button) {
+      return false;
+    }
+
+    if (button.dataset?.openidButton === '1') {
+      return true;
+    }
+
+    const parentNode = button.parentNode;
+    const cleanedButton = button.cloneNode(true);
+
+    if (parentNode) {
+      parentNode.replaceChild(cleanedButton, button);
+    }
+
+    const finalButton = cleanedButton;
+
+    finalButton.dataset.openidButton = '1';
+    finalButton.innerHTML = `${openIdText} <ha-icon-next slot="meta"></ha-icon-next>`;
+    finalButton.removeAttribute('onclick');
+    finalButton.removeAttribute('href');
+
+    const clickHandler = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      redirect_openid_login();
+    };
+
+    finalButton.onclick = clickHandler;
+
+    return true;
+  };
+
+  if (resolveButton()) {
+    return;
+  }
+
+  const observer = new MutationObserver(() => {
+    if (resolveButton()) {
+      observer.disconnect();
+    }
+  });
+
+  observer.observe(document.body, { childList: true, subtree: true });
 }
