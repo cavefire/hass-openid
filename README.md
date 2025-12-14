@@ -36,6 +36,10 @@ Note the client id and client secret as you will need it setting up this integra
      username_field: "preferred_username"  # Adjust based on your IdP's user info response
      scope: "openid profile email"
      block_login: false
+     trusted_ips: # List of CIDR blocks that are not affected by block_login
+        - "192.168.2.0/24"
+        - "192.168.2.5/32"
+        - "10.0.0.0/8"
      openid_text: "Login with OpenID / OAuth2"  # Text to display on the login page
      create_user: true  # Automatically create users on first login
    ```
@@ -55,6 +59,18 @@ If you want to disable the default Home Assistant login and only allow OpenID au
    openid:
      ...
      block_login: true
+     ...
+```
+
+To allow certain IP ranges to still use the default login (e.g. for local network access), you can specify them in the `trusted_ips` list using CIDR notation.
+```yaml
+   openid:
+     ...
+     block_login: true
+     trusted_ips:
+       - "192.168.2.0/24"
+       - "192.168.2.5/32"
+       - "10.0.0.0/8"
      ...
 ```
 

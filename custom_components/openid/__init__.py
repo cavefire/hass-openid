@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from http import HTTPStatus
+from ipaddress import ip_network
 import logging
 import os
 
@@ -27,6 +28,7 @@ from .const import (
     CONF_TOKEN_URL,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
+    CONF_TRUSTED_IPS,
     DOMAIN,
 )
 from .http_helper import override_authorize_login_flow, override_authorize_route
@@ -53,6 +55,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
+                vol.Optional(CONF_TRUSTED_IPS, default=[]): vol.All(
+                    cv.ensure_list, [cv.string]
+                ),
             }
         )
     },
@@ -69,6 +74,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data[DOMAIN] = config[DOMAIN]
     hass.data.setdefault("_openid_state", {})
+
+    trusted_networks: list = []
+    for entry in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
+        try:
+            network = ip_network(entry, strict=False)
+        except ValueError:
+            _LOGGER.warning("Invalid trusted IP/network '%s'; ignoring", entry)
+            continue
+        trusted_networks.append(network)
+
+    hass.data[DOMAIN][CONF_TRUSTED_IPS] = trusted_networks
 
     if CONF_CONFIGURE_URL in hass.data[DOMAIN]:
         try:
