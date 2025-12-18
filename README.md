@@ -31,7 +31,7 @@ Note the client id and client secret as you will need it setting up this integra
    ```yaml
    openid:
      client_id: YOUR_CLIENT_ID
-     client_secret: YOUR_CLIENT_SECRET
+     client_secret: !secret openid_client_secret
      configure_url: "https://YOUR_IDP_DOMAIN/.well-known/openid-configuration"  # Replace with your Identity Provider's URL
      username_field: "preferred_username"  # Adjust based on your IdP's user info response
      scope: "openid profile email"
@@ -43,8 +43,9 @@ Note the client id and client secret as you will need it setting up this integra
      openid_text: "Login with OpenID / OAuth2"  # Text to display on the login page
      create_user: true  # Automatically create users on first login
    ```
-2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
-3. Restart Home Assistant.
+2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_IDP_DOMAIN`, etc.) with the details provided by your Identity Provider.
+3. Use [secrets.yaml](https://www.home-assistant.io/docs/configuration/secrets/) to store `client_secret`.
+4. Restart Home Assistant.
 
 
 **username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.
