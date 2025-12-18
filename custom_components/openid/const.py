@@ -17,3 +17,8 @@ CONF_BLOCK_LOGIN = "block_login"
 CONF_USE_HEADER_AUTH = "use_header_auth"
 CONF_OPENID_TEXT = "openid_text"
 CONF_TRUSTED_IPS = "trusted_ips"
+CONF_LOGOUT_URL = "logout_url"
+
+CRED_ID_TOKEN = "openid_id_token"
+CRED_SESSION_STATE = "openid_session_state"
+CRED_LOGOUT_REDIRECT_URI = "openid_logout_redirect_uri"
