@@ -77,18 +77,33 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
 
 
 def override_authorize_route(hass: HomeAssistant) -> None:
-    """Patch the built-in /auth/authorize page to load our JS helper."""
+    """Patch the built-in /auth/authorize page to redirect to OpenID authorize with state preserved."""
 
     async def get(request: Request) -> Response:
-        content = hass.data[DOMAIN]["authorize_template"]
+        params = dict(request.query)
 
-        # Inject script before </head>
-        content = content.replace(
-            "</head>",
-            '<script src="/openid/authorize.js"></script></head>',
+        _LOGGER.debug(
+            "override_authorize_route intercepted /auth/authorize with params: %s",
+            params,
         )
 
-        return Response(status=HTTPStatus.OK, body=content, content_type="text/html")
+        base_url = f"{request.scheme}://{request.host}"
+        params["base_url"] = base_url
+
+        if "state" in params:
+            params["client_state"] = params["state"]
+            _LOGGER.debug(
+                "Preserving original OAuth state as client_state: %s", params["state"]
+            )
+
+        from urllib.parse import urlencode
+
+        query_string = urlencode(params)
+        redirect_url = f"/auth/openid/authorize?{query_string}"
+
+        _LOGGER.debug("Redirecting to: %s", redirect_url)
+
+        return Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
 
     # Swap out the existing GET handler on /auth/authorize
     for resource in hass.http.app.router._resources:  # noqa: SLF001
