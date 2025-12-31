@@ -1,17 +1,26 @@
 """Patch the built-in /auth/authorize and /auth/login_flow pages to load our JS helper."""
 
+import base64
 from http import HTTPStatus
 from ipaddress import ip_address
 import json
 import logging
+from pathlib import Path
+from urllib.parse import urlencode
 
-from aiohttp.web import Request, Response
+from aiohttp.web import FileResponse, Request, Response
 
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _read_file_content(path: Path) -> str:
+    """Read file content."""
+    with path.open(encoding="utf-8") as f:
+        return f.read()
 
 
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
@@ -77,24 +86,84 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
 
 
 def override_authorize_route(hass: HomeAssistant) -> None:
-    """Patch the built-in /auth/authorize page to load our JS helper."""
+    """Patch the built-in /auth/authorize page to redirect to OpenID authorize with state preserved."""
+
+    _original_get_function = None
 
     async def get(request: Request) -> Response:
-        content = hass.data[DOMAIN]["authorize_template"]
+        remote_ip = request.headers.get("X-Forwarded-For", request.remote)
+        if remote_ip and "," in remote_ip:
+            remote_ip = remote_ip.split(",", 1)[0]
+        is_trusted = False
+        if remote_ip:
+            try:
+                ip_obj = ip_address(remote_ip.strip())
+            except ValueError:
+                ip_obj = None
+            if ip_obj is not None:
+                for network in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
+                    if ip_obj in network:
+                        is_trusted = True
+                        break
 
-        # Inject script before </head>
-        content = content.replace(
-            "</head>",
-            '<script src="/openid/authorize.js"></script></head>',
+        should_block = hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False) and not is_trusted
+
+        if not should_block:
+            response = await _original_get_function(request)
+            if isinstance(response, FileResponse):
+                path = response._path  # noqa: SLF001
+                try:
+                    text = await hass.async_add_executor_job(_read_file_content, path)
+                    text = text.replace(
+                        "</body>", '<script src="/openid/authorize.js"></script></body>'
+                    )
+                    return Response(text=text, content_type="text/html")
+                except (OSError, UnicodeDecodeError):
+                    _LOGGER.warning("Failed to inject authorize.js", exc_info=True)
+            return response
+
+        params = dict(request.query)
+
+        _LOGGER.debug(
+            "override_authorize_route intercepted /auth/authorize with params: %s",
+            params,
         )
 
-        return Response(status=HTTPStatus.OK, body=content, content_type="text/html")
+        base_url = f"{request.scheme}://{request.host}"
+        params["base_url"] = base_url
+
+        if "state" in params:
+            params["client_state"] = params["state"]
+            _LOGGER.debug(
+                "Preserving original OAuth state as client_state: %s", params["state"]
+            )
+
+        if "client_id" not in params and "state" in params:
+            try:
+                state = params["state"]
+                decoded = base64.b64decode(state).decode("utf-8")
+                state_json = json.loads(decoded)
+                if "clientId" in state_json:
+                    params["client_id"] = state_json["clientId"].rstrip("/")
+                    _LOGGER.debug(
+                        "Extracted client_id from state: %s", params["client_id"]
+                    )
+            except (ValueError, TypeError, json.JSONDecodeError):
+                _LOGGER.warning("Failed to extract client_id from state", exc_info=True)
+
+        query_string = urlencode(params)
+        redirect_url = f"/auth/openid/authorize?{query_string}"
+
+        _LOGGER.debug("Redirecting to: %s", redirect_url)
+
+        return Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
 
     # Swap out the existing GET handler on /auth/authorize
     for resource in hass.http.app.router._resources:  # noqa: SLF001
         if getattr(resource, "canonical", None) == "/auth/authorize":
             get_handler = resource._routes.get("GET")  # noqa: SLF001
             # Replace the underlying coroutine fn.
+            _original_get_function = get_handler._handler  # noqa: SLF001
             get_handler._handler = get  # noqa: SLF001
             # Reset the routes map to ensure only our GET exists.
             resource._routes = {"GET": get_handler}  # noqa: SLF001

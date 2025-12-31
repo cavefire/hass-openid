@@ -44,9 +44,25 @@ function redirect_openid_login() {
   const urlParams = new URLSearchParams(window.location.search);
   const clientId = encodeURIComponent(urlParams.get('client_id'));
   const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
-  const baseUrl = encodeURIComponent(window.location.origin);
+  const referrerState = (() => {
+    try {
+      const ref = document.referrer ? new URL(document.referrer) : null;
+      return ref ? ref.searchParams.get('state') : null;
+    } catch (e) {
+      return null;
+    }
+  })();
 
-  window.location.href = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}`;
+  const state = urlParams.get('state') || referrerState || localStorage.getItem('openid_original_state');
+
+  if (state) {
+    localStorage.setItem('openid_original_state', state);
+  }
+  const baseUrl = encodeURIComponent(window.location.origin);
+  const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
+  const clientStateParam = state ? `&client_state=${encodeURIComponent(state)}` : '';
+
+  window.location.href = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}${stateParam}${clientStateParam}`;
 }
 
 function ensure_openid_button(openIdText) {
