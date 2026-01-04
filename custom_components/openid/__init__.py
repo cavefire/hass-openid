@@ -30,6 +30,7 @@ from .const import (
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_TRUSTED_IPS,
+    CONF_USE_HEADER_AUTH,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
     CRED_ID_TOKEN,
@@ -63,6 +64,7 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
+                vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
