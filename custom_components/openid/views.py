@@ -64,7 +64,9 @@ class OpenIDAuthorizeView(HomeAssistantView):
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
         # Check if we should show consent screen
         should_show_consent = (
-            conf.get(CONF_BLOCK_LOGIN, False) and params.get("client_id") is not None
+            conf.get(CONF_BLOCK_LOGIN, False)
+            and params.get("client_id") is not None
+            and not self._is_own_instance(request, params.get("redirect_uri"))
         )
 
         if should_show_consent:
@@ -74,19 +76,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             return await self._show_consent_screen(request, params)
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
-        client_state = params.get("client_state") or params.get("state")
-        if client_state:
-            state = secrets.token_urlsafe(24)  # internal CSRF state for IdP
-            params = dict(params)
-            params["client_state"] = client_state
-            _LOGGER.debug(
-                "Using client-provided OAuth state: %s (internal state: %s)",
-                client_state,
-                state,
-            )
-        else:
-            state = secrets.token_urlsafe(24)
-            _LOGGER.debug("Client state missing; generated state: %s", state)
+        state, params = self._generate_state(params)
 
         base_url = params.get("base_url", "")
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
@@ -106,6 +96,50 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
         return Response(status=302, headers={"Location": url})
+
+    def _generate_state(
+        self, params: Mapping[str, str]
+    ) -> tuple[str, Mapping[str, str]]:
+        client_state = params.get("client_state") or params.get("state")
+        if client_state:
+            state = secrets.token_urlsafe(24)  # internal CSRF state for IdP
+            params = dict(params)
+            params["client_state"] = client_state
+            _LOGGER.debug(
+                "Using client-provided OAuth state: %s (internal state: %s)",
+                client_state,
+                state,
+            )
+        else:
+            state = secrets.token_urlsafe(24)
+            _LOGGER.debug("Client state missing; generated state: %s", state)
+        return state, params
+
+    def _normalize_host(self, url: URL) -> str:
+        if url.scheme == "http":
+            default_port = 80
+        elif url.scheme == "https":
+            default_port = 443
+        else:
+            default_port = None
+
+        host = url.host
+        if host is None:
+            return ""
+        if url.port and url.port != default_port:
+            host = f"{host}:{url.port}"
+        return host
+
+    def _is_own_instance(self, request: Request, redirect_uri: str | None) -> bool:
+        if not redirect_uri:
+            return False
+        try:
+            redirect_url = URL(redirect_uri)
+            return self._normalize_host(redirect_url) == self._normalize_host(
+                request.url
+            )
+        except ValueError:
+            return False
 
     async def _show_consent_screen(
         self, request: Request, params: Mapping[str, str]
