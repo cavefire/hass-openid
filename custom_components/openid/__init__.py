@@ -177,6 +177,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     consent_template = await asyncio.to_thread(consent_path.read_text, encoding="utf-8")
     hass.data[DOMAIN]["consent_template"] = consent_template
 
+    # Preload error screen template
+    error_path = Path(__file__).parent / "error_template.html"
+    error_template = await asyncio.to_thread(error_path.read_text, encoding="utf-8")
+    hass.data[DOMAIN]["error_template"] = error_template
+
     # Serve the custom frontend JS that hooks into the login dialog
     await hass.http.async_register_static_paths(
         [

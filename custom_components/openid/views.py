@@ -18,11 +18,10 @@ from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.auth.models import User
 from homeassistant.components.auth import create_auth_code
 from homeassistant.components.http import KEY_HASS_USER, HomeAssistantView
-from homeassistant.components.person import DOMAIN as PERSON_DOMAIN, async_create_person
+from homeassistant.components.person import DOMAIN as PERSON_DOMAIN
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import NoURLAvailableError, get_url
-from homeassistant.util import slugify
 
 from .const import (
     CONF_AUTHORIZE_URL,
@@ -40,6 +39,7 @@ from .const import (
     DOMAIN,
 )
 from .oauth_helper import exchange_code_for_token, fetch_user_info
+from .user_helper import async_ensure_person_for_user, async_find_user_by_username
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,14 +57,15 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
-        conf: dict[str, str] = self.hass.data[DOMAIN]
+
+        # conf variable removed, using self.hass.data[DOMAIN] directly
 
         params = request.rel_url.query
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
         # Check if we should show consent screen
         should_show_consent = (
-            conf.get(CONF_BLOCK_LOGIN, False)
+            self.hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False)
             and params.get("client_id") is not None
             and not self._is_own_instance(request, params.get("redirect_uri"))
         )
@@ -86,13 +87,13 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
         query = {
             "response_type": "code",
-            "client_id": conf[CONF_CLIENT_ID],
+            "client_id": self.hass.data[DOMAIN][CONF_CLIENT_ID],
             "redirect_uri": redirect_uri,
-            "scope": conf.get(CONF_SCOPE, ""),
+            "scope": self.hass.data[DOMAIN].get(CONF_SCOPE, ""),
             "state": state,
         }
         encoded_query = urlencode(query)
-        url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+        url = self.hass.data[DOMAIN][CONF_AUTHORIZE_URL] + "?" + encoded_query
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
         return Response(status=302, headers={"Location": url})
@@ -190,7 +191,9 @@ class OpenIDConsentView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Handle consent form submission."""
-        conf: dict[str, str] = self.hass.data[DOMAIN]
+    async def post(self, request: Request) -> Response:
+        """Handle consent form submission."""
+        # conf variable removed, using self.hass.data[DOMAIN] directly
         form_data = await request.post()
 
         consent_state = form_data.get("state")
@@ -234,13 +237,13 @@ class OpenIDConsentView(HomeAssistantView):
 
         query = {
             "response_type": "code",
-            "client_id": conf[CONF_CLIENT_ID],
+            "client_id": self.hass.data[DOMAIN][CONF_CLIENT_ID],
             "redirect_uri": redirect_uri,
-            "scope": conf.get(CONF_SCOPE, ""),
+            "scope": self.hass.data[DOMAIN].get(CONF_SCOPE, ""),
             "state": state,
         }
         encoded_query = urlencode(query)
-        url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+        url = self.hass.data[DOMAIN][CONF_AUTHORIZE_URL] + "?" + encoded_query
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint after consent: %s", url)
         return Response(status=302, headers={"Location": url})
@@ -267,6 +270,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if not code or not state:
             _LOGGER.warning("Missing code/state query parameters – params: %s", params)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Missing code or state parameter.",
@@ -282,6 +286,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if not pending:
             _LOGGER.warning("Invalid state parameter received: %s", state)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Invalid state parameter.",
@@ -300,7 +305,7 @@ class OpenIDCallbackView(HomeAssistantView):
         params = {**params, **pending}
         _LOGGER.debug("Merged params: %s", dict(params))
 
-        conf: dict[str, str] = self.hass.data[DOMAIN]
+        # conf variable removed, using self.hass.data[DOMAIN] directly
         base_url = params.get("base_url", "")
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
@@ -309,12 +314,12 @@ class OpenIDCallbackView(HomeAssistantView):
         try:
             token_data = await exchange_code_for_token(
                 hass=self.hass,
-                token_url=conf[CONF_TOKEN_URL],
+                token_url=self.hass.data[DOMAIN][CONF_TOKEN_URL],
                 code=code,
-                client_id=conf[CONF_CLIENT_ID],
-                client_secret=conf[CONF_CLIENT_SECRET],
+                client_id=self.hass.data[DOMAIN][CONF_CLIENT_ID],
+                client_secret=self.hass.data[DOMAIN][CONF_CLIENT_SECRET],
                 redirect_uri=redirect_uri,
-                use_header_auth=bool(conf.get(CONF_USE_HEADER_AUTH, True)),
+                use_header_auth=bool(self.hass.data[DOMAIN].get(CONF_USE_HEADER_AUTH, True)),
             )
 
             access_token = token_data.get("access_token")
@@ -328,22 +333,24 @@ class OpenIDCallbackView(HomeAssistantView):
 
             user_info = await fetch_user_info(
                 hass=self.hass,
-                user_info_url=conf[CONF_USER_INFO_URL],
+                user_info_url=self.hass.data[DOMAIN][CONF_USER_INFO_URL],
                 access_token=access_token,
             )
         except Exception:
             _LOGGER.exception("Token exchange or user info fetch failed")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Could not exchange code for tokens or fetch user info.",
             )
 
-        username = user_info.get(conf[CONF_USERNAME_FIELD]) if user_info else None
+        username = user_info.get(self.hass.data[DOMAIN][CONF_USERNAME_FIELD]) if user_info else None
 
         if not username:
             _LOGGER.warning("No username found in user info")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! No username found in user info.",
@@ -353,6 +360,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if provider is None:
             _LOGGER.error("OpenID auth provider not registered")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Auth provider not available.",
@@ -377,6 +385,7 @@ class OpenIDCallbackView(HomeAssistantView):
         except ValueError as err:  # pragma: no cover - defensive guard
             _LOGGER.error("Failed to obtain credentials: %s", err)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Could not map credentials.",
@@ -396,7 +405,7 @@ class OpenIDCallbackView(HomeAssistantView):
         )
 
         if user is None and (username_value := credential_data.get("username")):
-            existing_user = await self._async_find_user_by_username(username_value)
+            existing_user = await async_find_user_by_username(self.hass, username_value)
             if existing_user is not None:
                 try:
                     if credentials.is_new:
@@ -424,6 +433,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if user is None:
             _LOGGER.warning("User %s not found in Home Assistant", username)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message=(
@@ -459,7 +469,7 @@ class OpenIDCallbackView(HomeAssistantView):
 
         self.hass.auth.async_update_user_credentials_data(credentials, credential_data)
 
-        await self._ensure_person_for_user(user, credential_data)
+        await async_ensure_person_for_user(self.hass, user, credential_data)
 
         client_id = params.get("client_id")
         if client_id is None:
@@ -554,70 +564,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if base_url:
             credential_data[CRED_LOGOUT_REDIRECT_URI] = base_url
 
-    async def _ensure_person_for_user(
-        self, user: User, credential_data: dict[str, Any]
-    ) -> None:
-        """Create a person entry for the user if needed."""
-        if PERSON_DOMAIN not in self.hass.data:
-            _LOGGER.debug("Person component not loaded; skipping person creation")
-            return
 
-        _, storage_collection, _ = self.hass.data[PERSON_DOMAIN]
-        items = storage_collection.async_items()
-
-        if any(item.get("user_id") == user.id for item in items):
-            return
-
-        candidate_name = (
-            credential_data.get("name")
-            or credential_data.get("preferred_username")
-            or credential_data.get("username")
-            or user.name
-        )
-
-        if candidate_name:
-            slug_candidate = slugify(candidate_name)
-            for item in items:
-                item_name = item.get("name")
-                item_id = item.get("id")
-                if (
-                    isinstance(item_name, str)
-                    and item_name.lower() == candidate_name.lower()
-                ) or (
-                    slug_candidate
-                    and isinstance(item_id, str)
-                    and item_id == slug_candidate
-                ):
-                    if item.get("user_id") != user.id:
-                        await storage_collection.async_update_item(
-                            item["id"],
-                            {"user_id": user.id},
-                        )
-                    return
-
-        person_name = candidate_name or user.id
-
-        try:
-            await async_create_person(self.hass, person_name, user_id=user.id)
-        except ValueError as err:
-            _LOGGER.warning("Unable to create person for user %s: %s", user.id, err)
-
-    async def _async_find_user_by_username(self, username: str) -> User | None:
-        """Return existing user matching username if available."""
-        username_lower = username.lower()
-        for candidate in await self.hass.auth.async_get_users():
-            if candidate.name and candidate.name.lower() == username_lower:
-                return candidate
-
-            for existing_credentials in candidate.credentials:
-                stored_username = existing_credentials.data.get("username")
-                if (
-                    isinstance(stored_username, str)
-                    and stored_username.lower() == username_lower
-                ):
-                    return candidate
-
-        return None
 
 
 class OpenIDSessionView(HomeAssistantView):
@@ -633,8 +580,8 @@ class OpenIDSessionView(HomeAssistantView):
 
     async def get(self, request: Request) -> Response:
         """Return logout configuration for the current user."""
-        conf: dict[str, Any] | None = self.hass.data.get(DOMAIN)
-        if not conf or not conf.get(CONF_LOGOUT_URL):
+
+        if not self.hass.data.get(DOMAIN) or not self.hass.data[DOMAIN].get(CONF_LOGOUT_URL):
             return Response(status=HTTPStatus.NO_CONTENT)
 
         user: User = request[KEY_HASS_USER]
@@ -669,13 +616,13 @@ class OpenIDSessionView(HomeAssistantView):
             params.setdefault("post_logout_redirect_uri", redirect_uri)
 
         if "id_token_hint" not in params and "session_state" not in params:
-            if client_id := conf.get(CONF_CLIENT_ID):
+            if client_id := self.hass.data[DOMAIN].get(CONF_CLIENT_ID):
                 params.setdefault("client_id", client_id)
 
         # Always return the logout URL even if there are no additional parameters
         # The frontend needs to redirect the user to the IdP logout page
         payload = {
-            "logout_url": conf[CONF_LOGOUT_URL],
+            "logout_url": self.hass.data[DOMAIN][CONF_LOGOUT_URL],
             "parameters": params,
         }
 
@@ -686,25 +633,22 @@ class OpenIDSessionView(HomeAssistantView):
         )
 
 
-def _show_error(params, alert_type, alert_message):
+def _show_error(hass, params, alert_type, alert_message):
     # make sure the alert_type and alert_message can be safely displayed
     alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
     alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
     redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
 
+    template_content = hass.data[DOMAIN]["error_template"]
+    template = Template(template_content)
+    html = template.substitute(
+        alert_type=alert_type,
+        alert_message=alert_message,
+        redirect_url=redirect_url,
+    )
+
     return Response(
         status=HTTPStatus.OK,
         content_type="text/html",
-        text=(
-            "<html><body><script>"
-            f"localStorage.setItem('alertType', '{alert_type}');"
-            f"localStorage.setItem('alertMessage', '{alert_message}');"
-            f"window.location.href = '{redirect_url}';"
-            "</script>"
-            f"<h1>{alert_type}</h1>"
-            f"<p>{alert_message}</p>"
-            f"<p>Redirecting to {redirect_url}...</p>"
-            f"<p><a href='{redirect_url}'>Click here if not redirected</a></p>"
-            "</body></html>"
-        ),
+        text=html,
     )
