@@ -42,7 +42,9 @@ window.fetch = async (...args) => {
 
 function redirect_openid_login() {
   const urlParams = new URLSearchParams(window.location.search);
-  const clientId = encodeURIComponent(urlParams.get('client_id'));
+  const rawClientId = urlParams.get('client_id');
+  const isAndroidClient = rawClientId === 'https://home-assistant.io/android';
+  const clientId = encodeURIComponent(rawClientId);
   const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
   const referrerState = (() => {
     try {
@@ -53,7 +55,11 @@ function redirect_openid_login() {
     }
   })();
 
-  const state = urlParams.get('state') || referrerState || localStorage.getItem('openid_original_state');
+  let state = urlParams.get('state') || referrerState || localStorage.getItem('openid_original_state');
+
+  if (isAndroidClient && !state) {
+    state = generateOpenIdState();
+  }
 
   if (state) {
     localStorage.setItem('openid_original_state', state);
@@ -61,8 +67,82 @@ function redirect_openid_login() {
   const baseUrl = encodeURIComponent(window.location.origin);
   const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
   const clientStateParam = state ? `&client_state=${encodeURIComponent(state)}` : '';
+  const authUrl = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}${stateParam}${clientStateParam}`;
 
-  window.location.href = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}${stateParam}${clientStateParam}`;
+  if (isAndroidClient && state) {
+    startAndroidSsoPolling(state);
+
+    const openedWindow = window.open(authUrl, '_blank', 'noopener,noreferrer');
+    if (!openedWindow) {
+      window.location.href = authUrl;
+      return;
+    }
+
+    showAndroidSsoWaitingMessage();
+    return;
+  }
+
+  window.location.href = authUrl;
+}
+
+function generateOpenIdState() {
+  try {
+    if (window.crypto && window.crypto.getRandomValues) {
+      const bytes = new Uint8Array(16);
+      window.crypto.getRandomValues(bytes);
+      const randomPart = Array.from(bytes)
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+      return `android-${randomPart}`;
+    }
+  } catch (err) {
+    // Fall through to time-based fallback.
+  }
+
+  return `android-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+}
+
+function showAndroidSsoWaitingMessage() {
+  const container = document.getElementsByClassName('card-content')[0] || document.body;
+  if (!container || document.getElementById('openid-android-waiting')) {
+    return;
+  }
+
+  const infoNode = document.createElement('ha-alert');
+  infoNode.id = 'openid-android-waiting';
+  infoNode.setAttribute('alert-type', 'info');
+  infoNode.textContent = 'Finish sign-in in your browser, then return here. This page will complete sign-in automatically.';
+  container.prepend(infoNode);
+}
+
+function startAndroidSsoPolling(state) {
+  const startedAt = Date.now();
+  const timeoutMs = 5 * 60 * 1000;
+
+  const poll = async () => {
+    if (Date.now() - startedAt > timeoutMs) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/auth/openid/android/status?state=${encodeURIComponent(state)}&_=${Date.now()}`);
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json();
+      if (payload.status === 'completed' && payload.callback_url) {
+        window.location.href = payload.callback_url;
+        return;
+      }
+    } catch (err) {
+      // Keep polling on transient failures.
+    }
+
+    window.setTimeout(poll, 1000);
+  };
+
+  poll();
 }
 
 function ensure_openid_button(openIdText) {

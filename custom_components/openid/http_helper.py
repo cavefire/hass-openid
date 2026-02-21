@@ -6,6 +6,7 @@ from ipaddress import ip_address
 import json
 import logging
 from pathlib import Path
+import secrets
 from urllib.parse import urlencode
 
 from aiohttp.web import FileResponse, Request, Response
@@ -118,7 +119,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                         "</body>", '<script src="/openid/authorize.js"></script></body>'
                     )
                     return Response(text=text, content_type="text/html")
-                except (OSError, UnicodeDecodeError):
+                except OSError, UnicodeDecodeError:
                     _LOGGER.warning("Failed to inject authorize.js", exc_info=True)
             return response
 
@@ -138,6 +139,26 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                 "Preserving original OAuth state as client_state: %s", params["state"]
             )
 
+        is_android_client = (
+            params.get("client_id") == "https://home-assistant.io/android"
+        )
+        android_client_state = (
+            params.get("client_state")
+            or params.get("state")
+            or f"android-{secrets.token_urlsafe(24)}"
+        )
+
+        if is_android_client:
+            params["client_state"] = android_client_state
+            params.setdefault("state", android_client_state)
+            hass.data.setdefault("_openid_android_callbacks", {})[
+                android_client_state
+            ] = {"status": "pending"}
+            _LOGGER.debug(
+                "Android authorize interception initialized poll state: %s",
+                android_client_state,
+            )
+
         if "client_id" not in params and "state" in params:
             try:
                 state = params["state"]
@@ -148,13 +169,47 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                     _LOGGER.debug(
                         "Extracted client_id from state: %s", params["client_id"]
                     )
-            except (ValueError, TypeError, json.JSONDecodeError):
+            except ValueError, TypeError, json.JSONDecodeError:
                 _LOGGER.warning("Failed to extract client_id from state", exc_info=True)
 
         query_string = urlencode(params)
         redirect_url = f"/auth/openid/authorize?{query_string}"
 
         _LOGGER.debug("Redirecting to: %s", redirect_url)
+
+        if is_android_client:
+            safe_redirect_url = redirect_url.replace("'", "%27").replace('"', "%22")
+            safe_state = android_client_state.replace("'", "%27").replace('"', "%22")
+            _LOGGER.debug(
+                "Serving Android wait-and-poll page for state: %s", android_client_state
+            )
+            return Response(
+                status=HTTPStatus.OK,
+                content_type="text/html",
+                text=(
+                    "<!DOCTYPE html><html><head>"
+                    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                    "</head><body>"
+                    "<h2>Continue sign in</h2>"
+                    "<p>Your browser will open for sign-in. Return to this page afterwards.</p>"
+                    f"<p><a href='{safe_redirect_url}' target='_blank' rel='noopener noreferrer'>Open sign-in page</a></p>"
+                    "<script>"
+                    f"const authUrl='{safe_redirect_url}';"
+                    f"const pollState='{safe_state}';"
+                    "const opened=window.open(authUrl,'_blank','noopener,noreferrer');"
+                    "if(!opened){window.location.href=authUrl;}"
+                    "const poll=async()=>{"
+                    "try{"
+                    "const r=await fetch('/auth/openid/android/status?state='+encodeURIComponent(pollState)+'&_='+Date.now());"
+                    "if(r.ok){const d=await r.json();if(d.status==='completed'&&d.callback_url){window.location.href=d.callback_url;return;}}"
+                    "}catch(e){}"
+                    "setTimeout(poll,1000);"
+                    "};"
+                    "poll();"
+                    "</script>"
+                    "</body></html>"
+                ),
+            )
 
         return Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
 

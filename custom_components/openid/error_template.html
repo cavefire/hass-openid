@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in error</title>
+    <link rel="stylesheet" href="/openid/style.css" />
+  </head>
+  <body>
+    <div class="page-card">
+      <h1>$alert_type</h1>
+      <p class="message">$alert_message</p>
+      <p class="message">Redirecting to your application…</p>
+      <p><a class="inline-link" href="$redirect_url">Continue manually</a></p>
+    </div>
+    <script>
+      localStorage.setItem('alertType', '$alert_type');
+      localStorage.setItem('alertMessage', '$alert_message');
+      window.location.href = '$redirect_url';
+    </script>
+  </body>
+</html>

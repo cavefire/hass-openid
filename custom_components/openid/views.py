@@ -74,7 +74,17 @@ class OpenIDAuthorizeView(HomeAssistantView):
             return await self._show_consent_screen(request, params)
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
+        client_id = params.get("client_id")
         client_state = params.get("client_state") or params.get("state")
+        if not client_state and _is_android_client(client_id):
+            client_state = f"android-{secrets.token_urlsafe(24)}"
+            params = dict(params)
+            params["client_state"] = client_state
+            _LOGGER.debug(
+                "Android client state missing; generated client_state: %s",
+                client_state,
+            )
+
         if client_state:
             state = secrets.token_urlsafe(24)  # internal CSRF state for IdP
             params = dict(params)
@@ -91,6 +101,11 @@ class OpenIDAuthorizeView(HomeAssistantView):
         base_url = params.get("base_url", "")
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
+        if _is_android_client(client_id) and client_state:
+            self.hass.data.setdefault("_openid_android_callbacks", {})[client_state] = {
+                "status": "pending"
+            }
+
         self.hass.data["_openid_state"][state] = params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(params))
 
@@ -103,6 +118,13 @@ class OpenIDAuthorizeView(HomeAssistantView):
         }
         encoded_query = urlencode(query)
         url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+
+        if _is_android_client(client_id) and client_state:
+            _LOGGER.debug(
+                "Serving Android authorize wait page for client_state: %s",
+                client_state,
+            )
+            return _android_waiting_response(self.hass, url, client_state)
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint: %s", url)
         return Response(status=302, headers={"Location": url})
@@ -177,9 +199,18 @@ class OpenIDConsentView(HomeAssistantView):
         _LOGGER.info("User authorized client_id: %s", original_params.get("client_id"))
 
         # Now proceed with the normal OAuth flow
+        client_id = original_params.get("client_id")
         client_state = original_params.get("client_state") or original_params.get(
             "state"
         )
+        if not client_state and _is_android_client(client_id):
+            client_state = f"android-{secrets.token_urlsafe(24)}"
+            original_params["client_state"] = client_state
+            _LOGGER.debug(
+                "Android client state missing after consent; generated client_state: %s",
+                client_state,
+            )
+
         if client_state:
             state = secrets.token_urlsafe(24)  # internal CSRF state for IdP
             original_params["client_state"] = client_state
@@ -195,6 +226,11 @@ class OpenIDConsentView(HomeAssistantView):
         base_url = original_params.get("base_url", "")
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
+        if _is_android_client(client_id) and client_state:
+            self.hass.data.setdefault("_openid_android_callbacks", {})[client_state] = {
+                "status": "pending"
+            }
+
         self.hass.data["_openid_state"][state] = original_params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))
 
@@ -207,6 +243,13 @@ class OpenIDConsentView(HomeAssistantView):
         }
         encoded_query = urlencode(query)
         url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+
+        if _is_android_client(client_id) and client_state:
+            _LOGGER.debug(
+                "Serving Android consent wait page for client_state: %s",
+                client_state,
+            )
+            return _android_waiting_response(self.hass, url, client_state)
 
         _LOGGER.debug("Redirecting to IdP authorize endpoint after consent: %s", url)
         return Response(status=302, headers={"Location": url})
@@ -233,6 +276,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if not code or not state:
             _LOGGER.warning("Missing code/state query parameters – params: %s", params)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Missing code or state parameter.",
@@ -248,6 +292,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if not pending:
             _LOGGER.warning("Invalid state parameter received: %s", state)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Invalid state parameter.",
@@ -287,6 +332,7 @@ class OpenIDCallbackView(HomeAssistantView):
             if not isinstance(access_token, str):
                 _LOGGER.error("Token response missing access token")
                 return _show_error(
+                    self.hass,
                     params,
                     alert_type="error",
                     alert_message="OpenID login failed! Access token missing in provider response.",
@@ -300,6 +346,7 @@ class OpenIDCallbackView(HomeAssistantView):
         except Exception:
             _LOGGER.exception("Token exchange or user info fetch failed")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Could not exchange code for tokens or fetch user info.",
@@ -310,6 +357,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if not username:
             _LOGGER.warning("No username found in user info")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! No username found in user info.",
@@ -319,6 +367,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if provider is None:
             _LOGGER.error("OpenID auth provider not registered")
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Auth provider not available.",
@@ -343,6 +392,7 @@ class OpenIDCallbackView(HomeAssistantView):
         except ValueError as err:  # pragma: no cover - defensive guard
             _LOGGER.error("Failed to obtain credentials: %s", err)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message="OpenID login failed! Could not map credentials.",
@@ -390,6 +440,7 @@ class OpenIDCallbackView(HomeAssistantView):
         if user is None:
             _LOGGER.warning("User %s not found in Home Assistant", username)
             return _show_error(
+                self.hass,
                 params,
                 alert_type="error",
                 alert_message=(
@@ -451,23 +502,35 @@ class OpenIDCallbackView(HomeAssistantView):
             client_id,
             credentials.id,
         )
+        callback_url = self._build_callback_url(url, result, oauth_client_state)
 
-        # Build callback URL query parameters
-        _LOGGER.debug("Building callback URL to redirect_uri: %s", url)
+        if _is_android_client(params.get("client_id")) and oauth_client_state:
+            self.hass.data.setdefault("_openid_android_callbacks", {})[
+                oauth_client_state
+            ] = {
+                "status": "completed",
+                "callback_url": callback_url,
+            }
+            return self._android_completed_response(callback_url)
 
-        # Parse existing URL to preserve any query params already in redirect_uri
-        parsed_url = URL(url)
+        return Response(status=HTTPStatus.FOUND, headers={"Location": callback_url})
+
+    @staticmethod
+    def _build_callback_url(
+        redirect_uri: str, auth_code: str, oauth_client_state: str | None
+    ) -> str:
+        """Build callback URL with auth parameters."""
+        _LOGGER.debug("Building callback URL to redirect_uri: %s", redirect_uri)
+        parsed_url = URL(redirect_uri)
         existing_params = dict(parsed_url.query)
         _LOGGER.debug("Existing params in redirect_uri: %s", existing_params)
 
-        # Build new params to add
-        callback_params = {
+        callback_params: dict[str, str | int] = {
             "auth_callback": 1,
-            "code": result,
+            "code": auth_code,
             "storeToken": "true",
         }
 
-        # Only add provider_id if not already present in redirect_uri
         if "provider_id" not in existing_params:
             callback_params["provider_id"] = "homeassistant"
             _LOGGER.debug("Adding provider_id to callback params")
@@ -477,15 +540,10 @@ class OpenIDCallbackView(HomeAssistantView):
                 existing_params.get("provider_id"),
             )
 
-        # Music Assistant requires state parameter even though it doesn't send one
-        # through our OpenID flow (it gets lost in the redirect chain)
-        # Generate a minimal state if not provided
         if oauth_client_state:
             callback_params["state"] = oauth_client_state
             _LOGGER.debug("Using original OAuth client state: %s", oauth_client_state)
         else:
-            # Generate a state parameter for compatibility with Music Assistant
-            # which requires state even though it doesn't provide it through the OpenID flow
             generated_state = secrets.token_urlsafe(16)
             callback_params["state"] = generated_state
             _LOGGER.debug(
@@ -493,12 +551,24 @@ class OpenIDCallbackView(HomeAssistantView):
                 generated_state,
             )
 
-        # Merge existing params with new params (new params take precedence)
         all_params = {**existing_params, **callback_params}
-        url = str(parsed_url.with_query(all_params))
-        _LOGGER.debug("Final callback URL: %s", url)
+        callback_url = str(parsed_url.with_query(all_params))
+        _LOGGER.debug("Final callback URL: %s", callback_url)
+        return callback_url
 
-        return Response(status=HTTPStatus.FOUND, headers={"Location": url})
+    def _android_completed_response(self, callback_url: str) -> Response:
+        """Return completion page for Android polling flow."""
+        template_content = self.hass.data[DOMAIN]["android_completed_template"]
+        template = Template(template_content)
+
+        safe_callback_url = callback_url.replace("'", "%27").replace('"', "%22")
+        html = template.substitute(callback_url=safe_callback_url)
+
+        return Response(
+            status=HTTPStatus.OK,
+            content_type="text/html",
+            text=html,
+        )
 
     @staticmethod
     def _store_logout_metadata(
@@ -652,25 +722,102 @@ class OpenIDSessionView(HomeAssistantView):
         )
 
 
-def _show_error(params, alert_type, alert_message):
+class OpenIDAndroidStatusView(HomeAssistantView):
+    """Expose Android OpenID callback status for polling."""
+
+    name = "api:openid:android_status"
+    url = "/auth/openid/android/status"
+    requires_auth = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize the Android status view."""
+        self.hass = hass
+
+    async def get(self, request: Request) -> Response:
+        """Return completion status for a given OAuth state."""
+        state = request.rel_url.query.get("state")
+        if not state:
+            payload = {"status": "error", "message": "Missing state"}
+            return Response(
+                status=HTTPStatus.BAD_REQUEST,
+                text=json.dumps(payload),
+                content_type="application/json",
+            )
+
+        status_store: dict[str, dict[str, str]] = self.hass.data.get(
+            "_openid_android_callbacks", {}
+        )
+        entry = status_store.get(state)
+        _LOGGER.debug("Android status poll for state %s: %s", state, entry)
+        if not entry:
+            return Response(
+                status=HTTPStatus.OK,
+                text=json.dumps({"status": "pending"}),
+                content_type="application/json",
+            )
+
+        if entry.get("status") == "completed" and entry.get("callback_url"):
+            payload = {
+                "status": "completed",
+                "callback_url": entry["callback_url"],
+            }
+            _LOGGER.debug("Android status completed for state %s", state)
+            status_store.pop(state, None)
+            return Response(
+                status=HTTPStatus.OK,
+                text=json.dumps(payload),
+                content_type="application/json",
+            )
+
+        return Response(
+            status=HTTPStatus.OK,
+            text=json.dumps({"status": "pending"}),
+            content_type="application/json",
+        )
+
+
+def _show_error(
+    hass: HomeAssistant,
+    params: Mapping[str, str],
+    alert_type: str,
+    alert_message: str,
+) -> Response:
     # make sure the alert_type and alert_message can be safely displayed
     alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
     alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
     redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
+    safe_redirect_url = redirect_url.replace("'", "%27").replace('"', "%22")
 
-    return Response(
-        status=HTTPStatus.OK,
-        content_type="text/html",
-        text=(
-            "<html><body><script>"
-            f"localStorage.setItem('alertType', '{alert_type}');"
-            f"localStorage.setItem('alertMessage', '{alert_message}');"
-            f"window.location.href = '{redirect_url}';"
-            "</script>"
-            f"<h1>{alert_type}</h1>"
-            f"<p>{alert_message}</p>"
-            f"<p>Redirecting to {redirect_url}...</p>"
-            f"<p><a href='{redirect_url}'>Click here if not redirected</a></p>"
-            "</body></html>"
-        ),
+    template_content = hass.data[DOMAIN]["error_template"]
+    template = Template(template_content)
+    html = template.substitute(
+        alert_type=alert_type,
+        alert_message=alert_message,
+        redirect_url=safe_redirect_url,
     )
+
+    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+
+
+def _android_waiting_response(
+    hass: HomeAssistant,
+    authorize_url: str,
+    poll_state: str,
+) -> Response:
+    """Return Android waiting page that polls for callback completion."""
+    safe_authorize_url = authorize_url.replace("'", "%27").replace('"', "%22")
+    safe_poll_state = poll_state.replace("'", "%27").replace('"', "%22")
+
+    template_content = hass.data[DOMAIN]["android_waiting_template"]
+    template = Template(template_content)
+    html = template.substitute(
+        authorize_url=safe_authorize_url,
+        poll_state=safe_poll_state,
+    )
+
+    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+
+
+def _is_android_client(client_id: str | None) -> bool:
+    """Return whether request is from Home Assistant Android client."""
+    return client_id == "https://home-assistant.io/android"
