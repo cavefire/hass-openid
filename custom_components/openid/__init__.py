@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client, config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
+from . import views as openid_views
 from .auth_provider import async_register_auth_provider
 from .const import (
     CONF_AUTHORIZE_URL,
@@ -39,12 +40,6 @@ from .const import (
     DOMAIN,
 )
 from .http_helper import override_authorize_login_flow, override_authorize_route
-from .views import (
-    OpenIDAuthorizeView,
-    OpenIDCallbackView,
-    OpenIDConsentView,
-    OpenIDSessionView,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +83,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data[DOMAIN] = config[DOMAIN]
     hass.data.setdefault("_openid_state", {})
+    hass.data.setdefault("_openid_android_callbacks", {})
 
     trusted_networks: list = []
     for entry in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
@@ -177,12 +173,33 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     consent_template = await asyncio.to_thread(consent_path.read_text, encoding="utf-8")
     hass.data[DOMAIN]["consent_template"] = consent_template
 
+    error_path = Path(__file__).parent / "error_template.html"
+    error_template = await asyncio.to_thread(error_path.read_text, encoding="utf-8")
+    hass.data[DOMAIN]["error_template"] = error_template
+
+    android_waiting_path = Path(__file__).parent / "android_waiting_template.html"
+    android_waiting_template = await asyncio.to_thread(
+        android_waiting_path.read_text, encoding="utf-8"
+    )
+    hass.data[DOMAIN]["android_waiting_template"] = android_waiting_template
+
+    android_completed_path = Path(__file__).parent / "android_completed_template.html"
+    android_completed_template = await asyncio.to_thread(
+        android_completed_path.read_text, encoding="utf-8"
+    )
+    hass.data[DOMAIN]["android_completed_template"] = android_completed_template
+
     # Serve the custom frontend JS that hooks into the login dialog
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
                 "/openid/authorize.js",
                 str(Path(__file__).parent / "authorize.js"),
+                cache_headers=False,
+            ),
+            StaticPathConfig(
+                "/openid/style.css",
+                str(Path(__file__).parent / "style.css"),
                 cache_headers=True,
             ),
             StaticPathConfig(
@@ -196,10 +213,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     add_extra_js_url(hass, "/openid/logout.js")
 
     # Register routes
-    hass.http.register_view(OpenIDAuthorizeView(hass))
-    hass.http.register_view(OpenIDCallbackView(hass))
-    hass.http.register_view(OpenIDConsentView(hass))
-    hass.http.register_view(OpenIDSessionView(hass))
+    hass.http.register_view(openid_views.OpenIDAuthorizeView(hass))
+    hass.http.register_view(openid_views.OpenIDCallbackView(hass))
+    hass.http.register_view(openid_views.OpenIDConsentView(hass))
+    hass.http.register_view(openid_views.OpenIDAndroidStatusView(hass))
+    hass.http.register_view(openid_views.OpenIDSessionView(hass))
 
     # Patch /auth/authorize to inject our JS file.
     override_authorize_route(hass)

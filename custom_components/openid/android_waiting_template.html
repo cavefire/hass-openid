@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Continue sign in</title>
+    <link rel="stylesheet" href="/openid/style.css" />
+  </head>
+  <body>
+    <div class="page-card">
+      <h1>Continue sign in</h1>
+      <p class="message">Open the sign-in page in your browser, then return here.</p>
+      <p><a class="inline-link" href="$authorize_url" target="_blank" rel="noopener noreferrer">Open sign-in page</a></p>
+      <div class="warning">Keep this page open while signing in so Home Assistant can complete authentication.</div>
+    </div>
+    <script>
+      const authUrl = '$authorize_url';
+      const pollState = '$poll_state';
+      const opened = window.open(authUrl, '_blank', 'noopener,noreferrer');
+
+      const poll = async () => {
+        try {
+          const response = await fetch('/auth/openid/android/status?state=' + encodeURIComponent(pollState) + '&_=' + Date.now());
+          if (response.ok) {
+            const data = await response.json();
+            if (data.status === 'completed' && data.callback_url) {
+              window.location.href = data.callback_url;
+              return;
+            }
+          }
+        } catch (err) {
+          // Ignore transient polling failures.
+        }
+
+        setTimeout(poll, 1000);
+      };
+
+      poll();
+    </script>
+  </body>
+</html>
