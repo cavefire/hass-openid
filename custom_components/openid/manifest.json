@@ -12,5 +12,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/cavefire/hass-openid/issues",
   "requirements": [],
-  "version": "1.1.6"
+  "version": "1.2.1"
 }
