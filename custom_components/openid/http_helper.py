@@ -25,7 +25,7 @@ def _read_file_content(path: Path) -> str:
 
 
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
-    """Patch the build-in /auth/login_flow page to not return any actual login data."""
+    """Patch the built-in /auth/login_flow page to not return any actual login data."""
 
     _original_post_function = None
 
@@ -119,7 +119,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                         "</body>", '<script src="/openid/authorize.js"></script></body>'
                     )
                     return Response(text=text, content_type="text/html")
-                except OSError, UnicodeDecodeError:
+                except (OSError, UnicodeDecodeError):
                     _LOGGER.warning("Failed to inject authorize.js", exc_info=True)
             return response
 
@@ -169,7 +169,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                     _LOGGER.debug(
                         "Extracted client_id from state: %s", params["client_id"]
                     )
-            except ValueError, TypeError, json.JSONDecodeError:
+            except (ValueError, TypeError, json.JSONDecodeError):
                 _LOGGER.warning("Failed to extract client_id from state", exc_info=True)
 
         query_string = urlencode(params)
