@@ -26,6 +26,7 @@ from .const import (
     CONF_BLOCK_LOGIN,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
+    CONF_CUSTOM_AUTH_PARAMS,
     CONF_LOGOUT_URL,
     CONF_OPENID_TEXT,
     CONF_SCOPE,
@@ -54,6 +55,9 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_USER_INFO_URL): cv.url,
                 vol.Optional(CONF_CONFIGURE_URL): cv.url,
                 vol.Optional(CONF_SCOPE, default="openid profile email"): cv.string,
+                vol.Optional(CONF_CUSTOM_AUTH_PARAMS, default={}): {
+                    cv.string: cv.string
+                },
                 vol.Optional(
                     CONF_USERNAME_FIELD, default="preferred_username"
                 ): cv.string,
