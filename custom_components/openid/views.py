@@ -28,6 +28,7 @@ from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
     CONF_CREATE_USER,
+    CONF_CUSTOM_AUTH_PARAMS,
     CONF_LOGOUT_URL,
     CONF_SCOPE,
     CONF_TOKEN_URL,
@@ -43,6 +44,39 @@ from .oauth_helper import exchange_code_for_token, fetch_user_info
 
 _LOGGER = logging.getLogger(__name__)
 
+_RESERVED_AUTHORIZE_QUERY_KEYS = {
+    "response_type",
+    "client_id",
+    "redirect_uri",
+    "scope",
+    "state",
+}
+
+
+def _build_authorize_url(conf: Mapping[str, Any], redirect_uri: str, state: str) -> str:
+    """Build IdP authorize URL including configured custom auth parameters."""
+    query: dict[str, str] = {
+        "response_type": "code",
+        "client_id": str(conf[CONF_CLIENT_ID]),
+        "redirect_uri": redirect_uri,
+        "scope": str(conf.get(CONF_SCOPE, "")),
+        "state": state,
+    }
+
+    custom_params = conf.get(CONF_CUSTOM_AUTH_PARAMS, {})
+    if isinstance(custom_params, Mapping):
+        for key, value in custom_params.items():
+            key_str = str(key)
+            if key_str in _RESERVED_AUTHORIZE_QUERY_KEYS:
+                _LOGGER.warning(
+                    "Ignoring custom_auth_params key '%s' because it conflicts with a required OAuth parameter",
+                    key_str,
+                )
+                continue
+            query[key_str] = str(value)
+
+    return f"{conf[CONF_AUTHORIZE_URL]}?{urlencode(query)}"
+
 
 class OpenIDAuthorizeView(HomeAssistantView):
     """Redirect to the IdP’s authorisation endpoint."""
@@ -57,7 +91,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
-        conf: dict[str, str] = self.hass.data[DOMAIN]
+        conf: dict[str, Any] = self.hass.data[DOMAIN]
 
         params = request.rel_url.query
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
@@ -109,15 +143,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
         self.hass.data["_openid_state"][state] = params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(params))
 
-        query = {
-            "response_type": "code",
-            "client_id": conf[CONF_CLIENT_ID],
-            "redirect_uri": redirect_uri,
-            "scope": conf.get(CONF_SCOPE, ""),
-            "state": state,
-        }
-        encoded_query = urlencode(query)
-        url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+        url = _build_authorize_url(conf, redirect_uri, state)
 
         if _is_android_client(client_id) and client_state:
             _LOGGER.debug(
@@ -178,7 +204,7 @@ class OpenIDConsentView(HomeAssistantView):
 
     async def post(self, request: Request) -> Response:
         """Handle consent form submission."""
-        conf: dict[str, str] = self.hass.data[DOMAIN]
+        conf: dict[str, Any] = self.hass.data[DOMAIN]
         form_data = await request.post()
 
         consent_state = form_data.get("state")
@@ -234,15 +260,7 @@ class OpenIDConsentView(HomeAssistantView):
         self.hass.data["_openid_state"][state] = original_params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))
 
-        query = {
-            "response_type": "code",
-            "client_id": conf[CONF_CLIENT_ID],
-            "redirect_uri": redirect_uri,
-            "scope": conf.get(CONF_SCOPE, ""),
-            "state": state,
-        }
-        encoded_query = urlencode(query)
-        url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
+        url = _build_authorize_url(conf, redirect_uri, state)
 
         if _is_android_client(client_id) and client_state:
             _LOGGER.debug(
