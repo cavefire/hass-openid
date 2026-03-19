@@ -29,10 +29,12 @@ from .config_helpers import (
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_CONSENT_PROMPT,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
+    CONF_LANDING_URL,
     CONF_OPENID_TEXT,
     CONF_SCOPE,
     CONF_TOKEN_URL,

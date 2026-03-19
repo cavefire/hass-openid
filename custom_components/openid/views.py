@@ -15,6 +15,8 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from aiohttp.web import Request, Response
+from aiohttp import ClientSession
+
 from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
@@ -30,6 +32,8 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_LANDING_URL,
+    CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
@@ -121,6 +125,23 @@ class OpenIDAuthorizeView(HomeAssistantView):
             return False
 
         return True
+
+    def is_speculative_request(self, request):
+        sec_purpose = request.headers.get("Sec-Purpose", "").lower()
+        
+        purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
+       
+        if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
+            _LOGGER.debug(
+                "This is a speculative request. "
+                "Sec-Purpose=%s Purpose=%s URL=%s",
+                request.headers.get("Sec-Purpose"),
+                request.headers.get("Purpose"),
+                request.url,
+            )
+            return True
+
+        return  False
 
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
@@ -237,7 +258,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             cancel_url=params.get("base_url", "/"),
         )
         return Response(status=HTTPStatus.OK, body=html, content_type="text/html")
-
+        
 
 class OpenIDConsentView(HomeAssistantView):
     """Handle consent form submission."""
