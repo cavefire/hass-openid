@@ -32,6 +32,7 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_POST_LOGOUT_URL,
@@ -136,6 +137,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
         # Check if we should show consent screen
         if self.should_show_consent_screen(params):
+
             _LOGGER.info(
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
