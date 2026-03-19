@@ -9,7 +9,7 @@ import logging
 import secrets
 from string import Template
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode,quote
 
 from aiohttp.web import Request, Response
 from aiohttp import ClientSession
@@ -29,6 +29,7 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_ERROR_URL,
     CONF_LANDING_URL,
     CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
@@ -821,18 +822,25 @@ def _show_error(
     alert_message: str,
 ) -> Response:
     # make sure the alert_type and alert_message can be safely displayed
+    conf: dict[str, Any] | None = hass.data.get(DOMAIN)
     alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
     alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
     redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
     safe_redirect_url = redirect_url.replace("'", "%27").replace('"', "%22")
 
-    template_content = hass.data[DOMAIN]["error_template"]
-    template = Template(template_content)
-    html = template.substitute(
-        alert_type=alert_type,
-        alert_message=alert_message,
-        redirect_url=safe_redirect_url,
-    )
+    
+    error_url = conf.get(CONF_ERROR_URL)
+    if error_url is not None:
+        full_error_url = f"{error_url}?alert_type={quote(alert_type)}&alert_message={quote(alert_message)}" 
+        return Response(status=HTTPStatus.FOUND, headers={"Location": full_error_url})
+    else:
+        template_content = hass.data[DOMAIN]["error_template"]
+        template = Template(template_content)
+        html = template.substitute(
+            alert_type=alert_type,
+            alert_message=alert_message,
+            redirect_url=safe_redirect_url,
+        )
 
         return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
 
