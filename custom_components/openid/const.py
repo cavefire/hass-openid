@@ -14,6 +14,8 @@ CONF_SCOPE = "scope"
 
 CONF_CREATE_USER = "create_user"
 CONF_BLOCK_LOGIN = "block_login"
+CONF_CONSENT_PROMPT = "consent_prompt"
+CONF_LANDING_URL = "landing_url"
 CONF_USE_HEADER_AUTH = "use_auth_header"
 CONF_OPENID_TEXT = "openid_text"
 CONF_TRUSTED_IPS = "trusted_ips"
