@@ -63,8 +63,8 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
                 vol.Optional(CONF_CONSENT_PROMPT, default=True): cv.boolean,
-                vol.Optional(CONF_LANDING_URL, default=None): cv.url,
-                vol.Optional(CONF_ERROR_URL, default=None): cv.url,
+                vol.Optional(CONF_LANDING_URL): cv.url,
+                vol.Optional(CONF_ERROR_URL): cv.url,
                 vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
