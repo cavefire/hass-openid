@@ -9,7 +9,7 @@ from pathlib import Path
 import secrets
 from urllib.parse import urlencode
 
-from aiohttp.web import FileResponse, Request, Response
+from aiohttp.web import FileResponse, Request, Response, HTTPFound
 
 from homeassistant.core import HomeAssistant
 
@@ -142,6 +142,38 @@ def override_authorize_route(hass: HomeAssistant) -> None:
         is_trusted = _is_trusted_request(request, config)
         should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
+        if should_block and is_speculative_request(request) and request.query.get("_activated") != "1":
+            current_url = str(request.url)
+            html = f"""<!doctype html>
+        <html><body>
+        <script>
+        const target = {json.dumps(current_url)};
+        const restart = () => {{
+          const u = new URL(target);
+          u.searchParams.set("_activated", "1");
+          window.location.replace(u.toString());
+        }};
+        if (!document.prerendering && document.visibilityState === "visible") {{
+          restart();
+        }} else {{
+          document.addEventListener("visibilitychange", () => {{
+            if (document.visibilityState === "visible") restart();
+          }}, {{ once: true }});
+        }}
+        </script>
+        </body></html>"""
+            return Response(
+                status=HTTPStatus.OK,
+                content_type="text/html",
+                text=html,
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                    "Vary": "Sec-Purpose, Purpose",
+                },
+            )
+
         if not should_block:
             response = await _original_get_function(request)
             if isinstance(response, FileResponse):
@@ -162,7 +194,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             "override_authorize_route intercepted /auth/authorize with params: %s",
             params,
         )
-
+    
         base_url = f"{request.scheme}://{request.host}"
         params["base_url"] = base_url
 
@@ -261,5 +293,5 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             get_handler._handler = get  # noqa: SLF001
             # Reset the routes map to ensure only our GET exists.
             resource._routes = {"GET": get_handler}  # noqa: SLF001
-            _LOGGER.debug("Overrode /auth/authorize route – custom JS injected")
+            _LOGGER.debug("Overrode /auth/authorize route - custom JS injected")
             break

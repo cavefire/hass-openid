@@ -37,6 +37,7 @@ from .const import (
     CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
+    CONF_POST_LOGOUT_URL,
     CONF_LOGOUT_URL,
     CONF_SCOPE,
     CONF_TOKEN_URL,
@@ -149,6 +150,8 @@ class OpenIDAuthorizeView(HomeAssistantView):
         conf: dict[str, str] = self.hass.data[DOMAIN]
 
         params = request.rel_url.query
+        activated = params.get("_activated") == "1"
+
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
 
@@ -158,6 +161,66 @@ class OpenIDAuthorizeView(HomeAssistantView):
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
             return await self._show_consent_screen(request, params)
+        elif self.is_speculative_request(request) and not activated:
+            current_url = str(request.url)
+            html = f"""<!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+          <meta http-equiv="Pragma" content="no-cache">
+          <meta http-equiv="Expires" content="0">
+          <title>Loading</title>
+          <style>
+            html, body {{
+              margin: 0;
+              height: 100%;
+              background: #0f1722;
+              color: #d7e3f4;
+              font-family: system-ui, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }}
+          </style>
+        </head>
+        <body>
+          <div>Opening sign-in</div>
+          <script>
+            const target = {json.dumps(current_url)};
+            const restart = () => {{
+              const url = new URL(target);
+              url.searchParams.set("_activated", "1");
+              window.location.replace(url.toString());
+            }};
+
+            // If already visible and not prerendering, continue immediately.
+            if (!document.prerendering && document.visibilityState === "visible") {{
+              restart();
+            }} else {{
+              document.addEventListener("visibilitychange", () => {{
+                if (document.visibilityState === "visible") restart();
+              }}, {{ once: true }});
+
+              if ("onprerenderingchange" in document) {{
+                document.addEventListener("prerenderingchange", restart, {{ once: true }});
+              }}
+            }}
+          </script>
+        </body>
+        </html>"""
+            return Response(
+                status=HTTPStatus.OK,
+                content_type="text/html",
+                text=html,
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                    "Vary": "Sec-Purpose, Purpose",
+                },
+            )
 
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
@@ -255,6 +318,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             client_id=params.get("client_id", "Unknown Application"),
             redirect_uri=params.get("redirect_uri", ""),
             base_url=params.get("base_url", ""),
+            client_state=client_state,
             client_state_input=client_state_input,
             cancel_url=params.get("base_url", "/"),
         )
@@ -507,11 +571,14 @@ class OpenIDCallbackView(HomeAssistantView):
 
         credential_data = dict(credentials.data)
         credential_data.update(new_credential_fields)
+
+        postlogout_url = conf.get(CONF_POST_LOGOUT_URL) or base_url
+
         self._store_logout_metadata(
             credential_data,
             token_data,
             params,
-            base_url,
+            postlogout_url,
         )
 
         user: User | None = await self.hass.auth.async_get_user_by_credentials(
@@ -682,7 +749,7 @@ class OpenIDCallbackView(HomeAssistantView):
         credential_data: dict[str, Any],
         token_data: dict[str, Any] | None,
         params: Mapping[str, Any],
-        base_url: str | None,
+        postlogout_redirect_url: str | None,
     ) -> None:
         """Persist logout-related metadata for future IdP notifications."""
 
@@ -694,8 +761,8 @@ class OpenIDCallbackView(HomeAssistantView):
         elif token_data and (session_state := token_data.get("session_state")):
             credential_data[CRED_SESSION_STATE] = session_state
 
-        if base_url:
-            credential_data[CRED_LOGOUT_REDIRECT_URI] = base_url
+        if postlogout_redirect_url:
+            credential_data[CRED_LOGOUT_REDIRECT_URI] = postlogout_redirect_url
 
     async def _ensure_person_for_user(
         self, user: User, credential_data: dict[str, Any]
@@ -761,7 +828,6 @@ class OpenIDCallbackView(HomeAssistantView):
                     return candidate
 
         return None
-
 
 class OpenIDSessionView(HomeAssistantView):
     """Expose logout metadata for the active user session."""

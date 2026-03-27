@@ -15,7 +15,12 @@ window.fetch = async (...args) => {
 
   if (responseBody.block_login) {
     console.info('Home Assistant login methods are blocked by hass-openid. Redirecting to OpenID login.');
-    redirect_openid_login();
+    //const secPurpose = (document?.prerendering ? "prerender" : "");
+    //if (document.prerendering || secPurpose.includes("prerender")) {
+    //   console.debug("Skipping OpenID redirect during prerender");
+    //} else {
+      redirect_openid_login();
+    //}
     return response;
   }
 
@@ -46,6 +51,16 @@ function redirect_openid_login() {
   const isAndroidClient = rawClientId === 'https://home-assistant.io/android';
   const clientId = encodeURIComponent(rawClientId);
   const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
+  let state = urlParams.get('state');
+
+  if (!rawClientId || !rawRedirectUri) {
+    console.warn('OpenID redirect skipped: missing client_id or redirect_uri');
+    return;
+  }
+
+  const clientId = encodeURIComponent(rawClientId);
+  const redirectUri = encodeURIComponent(rawRedirectUri);
+
   const referrerState = (() => {
     try {
       const ref = document.referrer ? new URL(document.referrer) : null;
@@ -55,7 +70,7 @@ function redirect_openid_login() {
     }
   })();
 
-  let state = urlParams.get('state') || referrerState || localStorage.getItem('openid_original_state');
+  state = state || referrerState || localStorage.getItem('openid_original_state');
 
   if (isAndroidClient && !state) {
     state = generateOpenIdState();
