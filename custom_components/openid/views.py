@@ -59,23 +59,6 @@ class OpenIDAuthorizeView(HomeAssistantView):
         """Initialize the authorisation view."""
         self.hass = hass
 
-    def is_speculative_request(self, request):
-        sec_purpose = request.headers.get("Sec-Purpose", "").lower()
-        
-        purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
-       
-        if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
-            _LOGGER.debug(
-                "This is a speculative request. "
-                "Sec-Purpose=%s Purpose=%s URL=%s",
-                request.headers.get("Sec-Purpose"),
-                request.headers.get("Purpose"),
-                request.url,
-            )
-            return True
-
-        return  False
-
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
         conf: dict[str, str] = self.hass.data[DOMAIN]
@@ -83,32 +66,19 @@ class OpenIDAuthorizeView(HomeAssistantView):
         params = request.rel_url.query
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
-        # Check if we should show consent screen
-        should_show_consent = (
+
+        # check if we should block showing login
+        block_login = (
             conf.get(CONF_BLOCK_LOGIN, False) and params.get("client_id") is not None
         )
 
 
-        if should_show_consent:
-            if conf.get(CONF_CONSENT_PROMPT,True):
-                _LOGGER.info(
-                  "Showing consent screen for client_id: %s", params.get("client_id")
-                )
-                return await self._show_consent_screen(request, params)
-            elif self.is_speculative_request(request):
-                # Use a client session to make the request
-                target_url = conf.get(CONF_LANDING_URL)
-                async with ClientSession() as session:
-                    async with session.get(target_url) as response:
-                        # Read the response body asynchronously
-                        html_content = await response.text() 
-
-                        # Return the fetched content in the current response, avoiding a redirect
-                        return Response(
-                            text=html_content,
-                            content_type='text/html',
-                            status=response.status # use the same status code as the target
-                        )
+        # Check if we should show consent screen
+        if block_login and conf.get(CONF_CONSENT_PROMPT,True):
+            _LOGGER.info(
+                "Showing consent screen for client_id: %s", params.get("client_id")
+            )
+            return await self._show_consent_screen(request, params)
 
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
