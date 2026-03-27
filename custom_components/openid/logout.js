@@ -79,7 +79,7 @@ const loadLogoutSession = async (hass) => {
   return sessionLoadingPromise;
 };
 
-window.buildLogoutUrl = (metadata) => {
+ const buildLogoutUrl = (metadata) => {
   if (!metadata || !metadata.logout_url) {
     return null;
   }
@@ -154,6 +154,9 @@ const performLogout = async (hass, redirectUrl) => {
   window.location.href = redirectUrl;
 };
 
+// Custom function that can be called to trigger logout from a custom logout button.
+// This does not use the hass-logout event which causes inconsistent redirect cancels on the browser when
+// redirectUrl is not '/'
 window.handleOpenIdLogout = () => {
     const app = document.querySelector("home-assistant");
     const hass = app?.hass;

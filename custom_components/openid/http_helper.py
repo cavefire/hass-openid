@@ -144,6 +144,9 @@ def override_authorize_route(hass: HomeAssistant) -> None:
 
         if should_block and is_speculative_request(request) and request.query.get("_activated") != "1":
             current_url = str(request.url)
+            # We return a tiny shim of a page that waits to be visible and solves browser doing prefetch/prerender calls
+            # This prevents bookmarks to home-assistant from hanging due to a prerender call.
+            # The page waits for it to be visible then replaces url to the actived url starting oauth signin.
             html = f"""<!doctype html>
         <html><body>
         <script>
@@ -175,13 +178,12 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             )
 
         if not should_block:
-            _LOGGER.debug(f"override_authorize - Not blocking login URL={request.url}" )
+            _LOGGER.debug(f"override_authorize - Showing login URL={request.url}" )
 
             response = await _original_get_function(request)
             if isinstance(response, FileResponse):
                 path = response._path  # noqa: SLF001
                 try:
-                    _LOGGER.warning("Trying to inject authorize.js")
                     text = await hass.async_add_executor_job(_read_file_content, path)
                     text = text.replace(
                         "</body>", '<script src="/openid/authorize.js"></script></body>'
@@ -279,13 +281,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                 ),
             )
 
-        response = Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        response.headers['Vary'] = 'Sec-Purpose' 
-        response.headers['Clear-Site-Data'] = 'prefetchCache, prerenderCache' 
-        return response
+        return Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
 
     # Swap out the existing GET handler on /auth/authorize
     for resource in hass.http.app.router._resources:  # noqa: SLF001

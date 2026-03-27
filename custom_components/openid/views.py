@@ -975,7 +975,7 @@ def _show_error(
             redirect_url=safe_redirect_url,
         )
 
-        return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
 
 
 def _android_waiting_response(
