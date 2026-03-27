@@ -32,9 +32,6 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
-    CONF_ERROR_URL,
-    CONF_LANDING_URL,
-    CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_POST_LOGOUT_URL,
@@ -221,6 +218,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
                     "Vary": "Sec-Purpose, Purpose",
                 },
             )
+            return await self._show_consent_screen(request, params)
 
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
@@ -318,7 +316,6 @@ class OpenIDAuthorizeView(HomeAssistantView):
             client_id=params.get("client_id", "Unknown Application"),
             redirect_uri=params.get("redirect_uri", ""),
             base_url=params.get("base_url", ""),
-            client_state=client_state,
             client_state_input=client_state_input,
             cancel_url=params.get("base_url", "/"),
         )
