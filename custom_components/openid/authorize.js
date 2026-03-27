@@ -15,12 +15,7 @@ window.fetch = async (...args) => {
 
   if (responseBody.block_login) {
     console.info('Home Assistant login methods are blocked by hass-openid. Redirecting to OpenID login.');
-    //const secPurpose = (document?.prerendering ? "prerender" : "");
-    //if (document.prerendering || secPurpose.includes("prerender")) {
-    //   console.debug("Skipping OpenID redirect during prerender");
-    //} else {
-      redirect_openid_login();
-    //}
+    redirect_openid_login();
     return response;
   }
 
@@ -49,8 +44,7 @@ function redirect_openid_login() {
   const urlParams = new URLSearchParams(window.location.search);
   const rawClientId = urlParams.get('client_id');
   const isAndroidClient = rawClientId === 'https://home-assistant.io/android';
-  const clientId = encodeURIComponent(rawClientId);
-  const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
+  const rawRedirectUri = urlParams.get('redirect_uri');
   let state = urlParams.get('state');
 
   if (!rawClientId || !rawRedirectUri) {

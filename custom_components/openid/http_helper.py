@@ -175,10 +175,13 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             )
 
         if not should_block:
+            _LOGGER.debug(f"override_authorize - Not blocking login URL={request.url}" )
+
             response = await _original_get_function(request)
             if isinstance(response, FileResponse):
                 path = response._path  # noqa: SLF001
                 try:
+                    _LOGGER.warning("Trying to inject authorize.js")
                     text = await hass.async_add_executor_job(_read_file_content, path)
                     text = text.replace(
                         "</body>", '<script src="/openid/authorize.js"></script></body>'
