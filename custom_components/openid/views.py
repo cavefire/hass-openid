@@ -201,7 +201,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             cancel_url=params.get("base_url", "/"),
         )
         return Response(status=HTTPStatus.OK, body=html, content_type="text/html")
-        
+
 
 class OpenIDConsentView(HomeAssistantView):
     """Handle consent form submission."""
@@ -834,7 +834,7 @@ def _show_error(
         redirect_url=safe_redirect_url,
     )
 
-        return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
 
 
 def _android_waiting_response(
