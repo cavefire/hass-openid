@@ -24,12 +24,10 @@ from .auth_provider import async_register_auth_provider
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
-    CONF_CONSENT_PROMPT,
     CONF_ERROR_URL,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_LOGOUT_URL,
-    CONF_LANDING_URL,
     CONF_OPENID_TEXT,
     CONF_SCOPE,
     CONF_TOKEN_URL,
@@ -62,8 +60,6 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
-                vol.Optional(CONF_CONSENT_PROMPT, default=True): cv.boolean,
-                vol.Optional(CONF_LANDING_URL): cv.url,
                 vol.Optional(CONF_ERROR_URL): cv.url,
                 vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
                 vol.Optional(
@@ -101,10 +97,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         trusted_networks.append(network)
 
     hass.data[DOMAIN][CONF_TRUSTED_IPS] = trusted_networks
-
-    if hass.data[DOMAIN][CONF_CONSENT_PROMPT] == False and not hass.data[DOMAIN].get(CONF_LANDING_URL):
-        _LOGGER.error(f"{CONF_LANDING_URL} is required when {CONF_CONSENT_PROMPT} is false")
-        return False
 
     async def _async_notify_idp_logout(credential: Credentials) -> None:
         """Clear logout-related metadata from credentials.

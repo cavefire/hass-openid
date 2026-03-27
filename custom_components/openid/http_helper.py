@@ -23,24 +23,6 @@ def _read_file_content(path: Path) -> str:
     with path.open(encoding="utf-8") as f:
         return f.read()
 
-def is_speculative_request(request):
-    sec_purpose = request.headers.get("Sec-Purpose", "").lower()
-        
-    purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
-       
-    if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
-        _LOGGER.debug(
-            "override_authorize - This is a speculative request. "
-            "Sec-Purpose=%s Purpose=%s URL=%s",
-            request.headers.get("Sec-Purpose"),
-            request.headers.get("Purpose"),
-            request.url,
-        )
-        return True
-    
-    return  False
-
-
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
     """Patch the built-in /auth/login_flow page to not return any actual login data."""
 
@@ -228,13 +210,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                 ),
             )
 
-        response = Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        response.headers['Vary'] = 'Sec-Purpose' 
-        response.headers['Clear-Site-Data'] = 'prefetchCache, prerenderCache' 
-        return response
+        return Response(status=HTTPStatus.FOUND, headers={"Location": redirect_url})
 
     # Swap out the existing GET handler on /auth/authorize
     for resource in hass.http.app.router._resources:  # noqa: SLF001
