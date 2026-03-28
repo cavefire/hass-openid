@@ -98,6 +98,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data[DOMAIN][CONF_TRUSTED_IPS] = trusted_networks
 
+    if not hass.data[DOMAIN].get(CONF_BLOCK_LOGIN) and not hass.data[DOMAIN].get(CONF_CONSENT_PROMPT):
+        _LOGGER.warn(f"{CONF_CONSENT_PROMPT} only valid when {CONF_BLOCK_LOGIN} is true")
+        return False
 
     async def _async_notify_idp_logout(credential: Credentials) -> None:
         """Clear logout-related metadata from credentials.
