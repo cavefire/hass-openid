@@ -42,6 +42,7 @@ Note the client id and client secret as you will need it setting up this integra
         - "10.0.0.0/8"
      openid_text: "Login with OpenID / OAuth2"  # Text to display on the login page
      create_user: true  # Automatically create users on first login
+     use_pkce: true  # Enable PKCE (auto-detected from discovery when omitted)
    ```
 2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
 3. Restart Home Assistant.
@@ -75,6 +76,19 @@ To allow certain IP ranges to still use the default login (e.g. for local networ
 ```
 
 **Make sure the OpenID / OAuth2 login works before blocking the default login!** If you block the default login and the OpenID authentication does not work, you will be locked out of your Home Assistant webinterface and will need to manually edit the `configuration.yaml` file to re-enable the default login.
+
+### PKCE (Proof Key for Code Exchange)
+
+**Auto-detection:** When `configure_url` is set and the discovery document advertises `S256` in `code_challenge_methods_supported`, PKCE is enabled automatically.
+
+**Manual override:** You can explicitly enable or disable PKCE regardless of what the discovery document says:
+```yaml
+openid:
+  ...
+  use_pkce: true   # force on
+  # use_pkce: false  # force off
+  ...
+```
 
 ### Alternative Configuration
 

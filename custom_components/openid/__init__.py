@@ -33,6 +33,7 @@ from .const import (
     CONF_TOKEN_URL,
     CONF_TRUSTED_IPS,
     CONF_USE_HEADER_AUTH,
+    CONF_USE_PKCE,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
     CRED_ID_TOKEN,
@@ -62,6 +63,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
                 vol.Optional(CONF_ERROR_URL): cv.url,
                 vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
+                vol.Optional(CONF_USE_PKCE): cv.boolean,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
@@ -255,6 +257,15 @@ async def fetch_urls(hass: HomeAssistant, configure_url: str) -> None:
             logout_endpoint := config_data.get("end_session_endpoint")
         ) and not hass.data[DOMAIN].get(CONF_LOGOUT_URL):
             hass.data[DOMAIN][CONF_LOGOUT_URL] = logout_endpoint
+
+        if CONF_USE_PKCE not in hass.data[DOMAIN]:
+            pkce_methods = config_data.get("code_challenge_methods_supported", [])
+            pkce_auto = "S256" in pkce_methods
+            hass.data[DOMAIN][CONF_USE_PKCE] = pkce_auto
+            if pkce_auto:
+                _LOGGER.info("PKCE (S256) auto-enabled via discovery")
+            else:
+                _LOGGER.debug("PKCE not auto-enabled (S256 not in code_challenge_methods_supported)")
 
         _LOGGER.info("OpenID configuration loaded successfully")
     except Exception as e:  # noqa: BLE001
