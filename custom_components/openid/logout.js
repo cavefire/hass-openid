@@ -1,85 +1,74 @@
 const LOGOUT_SESSION_ENDPOINT = "/auth/openid/session";
 let sessionLoaded = false;
-var sessionData = null;
+let sessionData = null;
 
-let sessionLoadingPromise = null;
+
 
 const loadLogoutSession = async (hass) => {
-  if (sessionData) {
+  if (sessionLoaded) {
     console.log("hass-openid: using cached session metadata");
     return sessionData;
   }
 
-  if (sessionLoadingPromise) {
-    console.log("hass-openid: awaiting in-flight session metadata request");
-    return sessionLoadingPromise;
-  }
-
+  sessionLoaded = true;
   console.log("hass-openid: fetching session metadata from", LOGOUT_SESSION_ENDPOINT);
 
-  sessionLoadingPromise = (async () => {
-    try {
-      let response;
-      if (hass && hass.fetchWithAuth) {
-        console.log("hass-openid: using hass.fetchWithAuth");
-        response = await hass.fetchWithAuth(LOGOUT_SESSION_ENDPOINT);
-      } else if (hass && hass.auth && (hass.auth.accessToken || hass.auth.data?.access_token)) {
-        console.log("hass-openid: using manual fetch with token");
-        const token = hass.auth.accessToken || hass.auth.data.access_token;
+  try {
+    let response;
+    if (hass && hass.fetchWithAuth) {
+      console.log("hass-openid: using hass.fetchWithAuth");
+      response = await hass.fetchWithAuth(LOGOUT_SESSION_ENDPOINT);
+    } else if (hass && hass.auth && (hass.auth.accessToken || hass.auth.data?.access_token)) {
+      console.log("hass-openid: using manual fetch with token");
+      const token = hass.auth.accessToken || hass.auth.data.access_token;
+      response = await fetch(LOGOUT_SESSION_ENDPOINT, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } else {
+      // Try getting token from localStorage
+      let token = null;
+      try {
+        const tokens = JSON.parse(window.localStorage.getItem("hassTokens"));
+        token = tokens?.access_token;
+      } catch (e) {
+        console.warn("hass-openid: failed to get tokens from localStorage", e);
+      }
+
+      if (token) {
+        console.log("hass-openid: using token from localStorage");
         response = await fetch(LOGOUT_SESSION_ENDPOINT, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
       } else {
-        let token = null;
-        try {
-          const tokens = JSON.parse(window.localStorage.getItem("hassTokens"));
-          token = tokens?.access_token;
-        } catch (e) {
-          console.warn("hass-openid: failed to get tokens from localStorage", e);
-        }
-
-        if (token) {
-          console.log("hass-openid: using token from localStorage");
-          response = await fetch(LOGOUT_SESSION_ENDPOINT, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          });
-        } else {
-          console.log("hass-openid: no auth available, using same-origin");
-          response = await fetch(LOGOUT_SESSION_ENDPOINT, {
-            credentials: "same-origin",
-          });
-        }
+        console.log("hass-openid: no auth available, using same-origin");
+        response = await fetch(LOGOUT_SESSION_ENDPOINT, {
+          credentials: "same-origin",
+        });
       }
-
-      console.log("hass-openid: session fetch response status:", response.status);
-
-      if (!response.ok || response.status === 204) {
-        sessionData = null;
-        sessionLoaded = false;
-        return sessionData;
-      }
-
-      sessionData = await response.json();
-      sessionLoaded = true;
-      console.log("hass-openid: loaded session metadata:", sessionData);
-      return sessionData;
-    } catch (err) {
-      console.warn("hass-openid: failed to load logout metadata", err);
-      sessionData = null;
-      sessionLoaded = false;
-      return sessionData;
-    } finally {
-      sessionLoadingPromise = null;
     }
-  })();
-  return sessionLoadingPromise;
+
+    console.log("hass-openid: session fetch response status:", response.status);
+
+    if (!response.ok || response.status === 204) {
+      sessionData = null;
+      return sessionData;
+    }
+
+    sessionData = await response.json();
+    console.log("hass-openid: loaded session metadata:", sessionData);
+  } catch (err) {
+    console.warn("hass-openid: failed to load logout metadata", err);
+    sessionData = null;
+  }
+
+  return sessionData;
 };
 
- const buildLogoutUrl = (metadata) => {
+const buildLogoutUrl = (metadata) => {
   if (!metadata || !metadata.logout_url) {
     return null;
   }
@@ -131,7 +120,6 @@ const revokeFrontendAuth = async (hass) => {
 };
 
 let handlingLogout = false;
-
 const performLogout = async (hass, redirectUrl) => {
   console.log("hass-openid: performing logout, redirect to:", redirectUrl);
 
@@ -149,77 +137,50 @@ const performLogout = async (hass, redirectUrl) => {
     console.error("hass-openid: revoke failed, redirecting anyway", err);
     // Still redirect even if revoke fails
   }
- 
+
   console.log("hass-openid: redirecting to:", redirectUrl);
   window.location.href = redirectUrl;
 };
 
-// Custom function that can be called to trigger logout from a custom logout button.
-// This does not use the hass-logout event which causes inconsistent redirect cancels on the browser when
-// redirectUrl is not '/'
-window.handleOpenIdLogout = () => {
-    const app = document.querySelector("home-assistant");
-    const hass = app?.hass;
-
-    let metadata = sessionData;
-    let redirectUrl = buildLogoutUrl(metadata);
-    performLogout(hass, redirectUrl);
-   //window.location.assign(buildLogoutUrl(sessionData));
-}
-
 window.addEventListener(
   "hass-logout",
-  (event) => {
-    if (handlingLogout) {
-      console.log("hass-openid: already handling logout, ignoring duplicate event");
-      return;
-    }
-
-    console.log("hass-openid: intercepting logout event");
-    handlingLogout = true;
+  async (event) => {
     event.stopImmediatePropagation();
     event.preventDefault();
-    
-    let metadata = sessionData;
-    let redirectUrl = buildLogoutUrl(metadata);
-    window.location.assign(redirectUrl);
-
-/*
-    const finish = async () => {
-      const app = document.querySelector("home-assistant");
-      const hass = app?.hass;
-
-      // Load session metadata BEFORE revoking auth
-      console.log("hass-openid: loading logout session metadata");
-
-      let metadata = sessionData;
-      let redirectUrl = buildLogoutUrl(metadata);
-      
-      if (redirectUrl) {
-        console.log("hass-openid: will redirect to:", redirectUrl);
-        performLogout(hass, redirectUrl);
-      }
-    };
-
-    finish().finally(() => {
-      handlingLogout = false;
-    });
-*/
+    console.log("Logout started and overwritten");
+    window.logoutStarted = true;
   },
   { capture: true }
 );
 
 
-setTimeout(() => {
-  const app = document.querySelector("home-assistant");
-  const hass = app?.hass;
+window.addEventListener("closed",
+  (event) => {
 
-  if (!hass) {
-    console.log("hass-openid: warmup skipped, no hass object yet");
-    return;
-  }
+    if(window.logoutStarted) {
+      if (handlingLogout) {
+        console.log("hass-openid: already handling logout, ignoring duplicate event");
+        return;
+      }
 
-  console.log("hass-openid: warming logout session metadata");
-  loadLogoutSession(hass);
-}, 3000);
+      handlingLogout = true;
+      const finish = async () => {
+        const app = document.querySelector("home-assistant");
+        const hass = app?.hass;
 
+        console.log("hass-openid: getting preloaded logout session metadata");
+        //const metadata = sessionData
+        const metadata = await loadLogoutSession(hass);
+        let redirectUrl = buildLogoutUrl(metadata);
+
+        if (!redirectUrl) {
+          console.warn("hass-openid: no logout URL configured, redirecting to /");
+          redirectUrl = "/";
+        }
+        await performLogout(hass, redirectUrl);
+      }
+      finish().finally(() => {
+         handlingLogout = false;
+      });
+    }
+  }); 
