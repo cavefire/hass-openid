@@ -29,7 +29,6 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
-    CONF_LANDING_URL,
     CONF_CONSENT_PROMPT,
     CONF_CREATE_USER,
     CONF_LOGOUT_URL,
