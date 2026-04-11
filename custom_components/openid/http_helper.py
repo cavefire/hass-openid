@@ -23,7 +23,6 @@ def _read_file_content(path: Path) -> str:
     with path.open(encoding="utf-8") as f:
         return f.read()
 
-
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
     """Patch the built-in /auth/login_flow page to not return any actual login data."""
 

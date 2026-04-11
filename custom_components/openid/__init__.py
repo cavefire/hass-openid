@@ -24,6 +24,7 @@ from .auth_provider import async_register_auth_provider
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_ERROR_URL,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_LOGOUT_URL,
@@ -59,6 +60,7 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
+                vol.Optional(CONF_ERROR_URL): cv.url,
                 vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"

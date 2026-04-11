@@ -9,9 +9,11 @@ import logging
 import secrets
 from string import Template
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode,quote
 
 from aiohttp.web import Request, Response
+from aiohttp import ClientSession
+
 from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
@@ -27,6 +29,7 @@ from homeassistant.util import slugify
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_ERROR_URL,
     CONF_CREATE_USER,
     CONF_LOGOUT_URL,
     CONF_SCOPE,
@@ -55,6 +58,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
         """Initialize the authorisation view."""
         self.hass = hass
 
+
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
         conf: dict[str, str] = self.hass.data[DOMAIN]
@@ -72,6 +76,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
             return await self._show_consent_screen(request, params)
+
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
         client_id = params.get("client_id")
@@ -163,7 +168,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             cancel_url=params.get("base_url", "/"),
         )
         return Response(status=HTTPStatus.OK, body=html, content_type="text/html")
-
+        
 
 class OpenIDConsentView(HomeAssistantView):
     """Handle consent form submission."""
@@ -783,20 +788,27 @@ def _show_error(
     alert_message: str,
 ) -> Response:
     # make sure the alert_type and alert_message can be safely displayed
+    conf: dict[str, Any] | None = hass.data.get(DOMAIN)
     alert_type = alert_type.replace("'", "&#39;").replace('"', "&quot;")
     alert_message = alert_message.replace("'", "&#39;").replace('"', "&quot;")
     redirect_url = params.get("redirect_uri", "/").replace("auth_callback=1", "")
     safe_redirect_url = redirect_url.replace("'", "%27").replace('"', "%22")
 
-    template_content = hass.data[DOMAIN]["error_template"]
-    template = Template(template_content)
-    html = template.substitute(
-        alert_type=alert_type,
-        alert_message=alert_message,
-        redirect_url=safe_redirect_url,
-    )
+    
+    error_url = conf.get(CONF_ERROR_URL)
+    if error_url is not None:
+        full_error_url = f"{error_url}?alert_type={quote(alert_type)}&alert_message={quote(alert_message)}" 
+        return Response(status=HTTPStatus.FOUND, headers={"Location": full_error_url})
+    else:
+        template_content = hass.data[DOMAIN]["error_template"]
+        template = Template(template_content)
+        html = template.substitute(
+            alert_type=alert_type,
+            alert_message=alert_message,
+            redirect_url=safe_redirect_url,
+        )
 
-    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+        return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
 
 
 def _android_waiting_response(
