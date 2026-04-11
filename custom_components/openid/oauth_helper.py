@@ -30,14 +30,12 @@ async def exchange_code_for_token(
         "redirect_uri": redirect_uri,
     }
 
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
     if use_header_auth:
         credentials = f"{client_id}:{client_secret}"
         encoded_credentials = b64encode(credentials.encode("utf-8")).decode("utf-8")
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": f"Basic {encoded_credentials}",
-        }
+        headers["Authorization"] = f"Basic {encoded_credentials}"
     else:
         _LOGGER.warning(
             "Using client id and secret in request body might expose them, when your IdP logging is wrongly configured. Use with caution"
