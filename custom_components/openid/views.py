@@ -78,6 +78,36 @@ def _build_authorize_url(conf: Mapping[str, Any], redirect_uri: str, state: str)
     return f"{conf[CONF_AUTHORIZE_URL]}?{urlencode(query)}"
 
 
+def _resolve_callback_base_url(
+    hass: HomeAssistant, provided_base_url: str | None
+) -> str | None:
+    """Resolve callback base URL, preferring Home Assistant configured URL."""
+    candidates: list[str] = []
+
+    try:
+        configured_url = get_url(hass)
+    except NoURLAvailableError:
+        configured_url = None
+
+    if configured_url:
+        candidates.append(str(configured_url))
+    if provided_base_url:
+        candidates.append(provided_base_url)
+
+    for candidate in candidates:
+        try:
+            parsed = URL(candidate)
+        except ValueError:
+            continue
+
+        if not parsed.scheme or not parsed.host:
+            continue
+
+        return str(parsed.origin())
+
+    return None
+
+
 class OpenIDAuthorizeView(HomeAssistantView):
     """Redirect to the IdP’s authorisation endpoint."""
 
@@ -132,7 +162,11 @@ class OpenIDAuthorizeView(HomeAssistantView):
             state = secrets.token_urlsafe(24)
             _LOGGER.debug("Client state missing; generated state: %s", state)
 
-        base_url = params.get("base_url", "")
+        base_url = _resolve_callback_base_url(self.hass, params.get("base_url"))
+        if not base_url:
+            base_url = str(request.url.origin())
+        params = dict(params)
+        params["base_url"] = base_url
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
         if _is_android_client(client_id) and client_state:
@@ -249,7 +283,12 @@ class OpenIDConsentView(HomeAssistantView):
             state = secrets.token_urlsafe(24)
             _LOGGER.debug("Client state missing; generated state: %s", state)
 
-        base_url = original_params.get("base_url", "")
+        base_url = _resolve_callback_base_url(
+            self.hass, original_params.get("base_url")
+        )
+        if not base_url:
+            base_url = str(request.url.origin())
+        original_params["base_url"] = base_url
         redirect_uri = str(URL(base_url).with_path("/auth/openid/callback"))
 
         if _is_android_client(client_id) and client_state:
