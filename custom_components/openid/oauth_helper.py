@@ -20,6 +20,7 @@ async def exchange_code_for_token(
     client_secret: str,
     redirect_uri: str,
     use_header_auth: bool = True,
+    code_verifier: str | None = None,
 ) -> dict[str, Any]:
     """Exchange the *authorisation code* for tokens at the IdP."""
     session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
@@ -29,6 +30,9 @@ async def exchange_code_for_token(
         "code": code,
         "redirect_uri": redirect_uri,
     }
+
+    if code_verifier is not None:
+        data["code_verifier"] = code_verifier
 
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
 

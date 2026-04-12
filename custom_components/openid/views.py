@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
+from hashlib import sha256
 from http import HTTPStatus
 import json
 import logging
@@ -35,6 +37,7 @@ from .const import (
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USE_HEADER_AUTH,
+    CONF_USE_PKCE,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
     CRED_ID_TOKEN,
@@ -45,6 +48,21 @@ from .const import (
 from .oauth_helper import exchange_code_for_token, fetch_user_info
 
 _LOGGER = logging.getLogger(__name__)
+
+_PKCE_VERIFIER_KEY = "pkce_code_verifier"
+
+
+def _generate_pkce_pair() -> tuple[str, str]:
+    """Generate a PKCE code_verifier and code_challenge (S256 method).
+    [See RFC 7636](https://datatracker.ietf.org/doc/html/rfc7636#section-4.1)
+
+    Returns (code_verifier, code_challenge).
+    """
+    # verifier is 43-128 unreserved characters
+    code_verifier = secrets.token_urlsafe(96)[:128]
+    digest = sha256(code_verifier.encode("ascii")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return code_verifier, code_challenge
 
 
 class OpenIDAuthorizeView(HomeAssistantView):
@@ -111,16 +129,25 @@ class OpenIDAuthorizeView(HomeAssistantView):
                 "status": "pending"
             }
 
-        self.hass.data["_openid_state"][state] = params
-        _LOGGER.debug("Storing params under state %s: %s", state, dict(params))
-
-        query = {
+        stored_params = dict(params)
+        query: dict[str, str] = {
             "response_type": "code",
             "client_id": conf[CONF_CLIENT_ID],
             "redirect_uri": redirect_uri,
             "scope": conf.get(CONF_SCOPE, ""),
             "state": state,
         }
+
+        if conf.get(CONF_USE_PKCE, False):
+            code_verifier, code_challenge = _generate_pkce_pair()
+            stored_params[_PKCE_VERIFIER_KEY] = code_verifier
+            query["code_challenge"] = code_challenge
+            query["code_challenge_method"] = "S256"
+            _LOGGER.debug("PKCE enabled; code_challenge added to authorize request")
+
+        self.hass.data["_openid_state"][state] = stored_params
+        _LOGGER.debug("Storing params under state %s: %s", state, stored_params)
+
         encoded_query = urlencode(query)
         url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
 
@@ -236,16 +263,24 @@ class OpenIDConsentView(HomeAssistantView):
                 "status": "pending"
             }
 
-        self.hass.data["_openid_state"][state] = original_params
-        _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))
-
-        query = {
+        query: dict[str, str] = {
             "response_type": "code",
             "client_id": conf[CONF_CLIENT_ID],
             "redirect_uri": redirect_uri,
             "scope": conf.get(CONF_SCOPE, ""),
             "state": state,
         }
+
+        if conf.get(CONF_USE_PKCE, False):
+            code_verifier, code_challenge = _generate_pkce_pair()
+            original_params[_PKCE_VERIFIER_KEY] = code_verifier
+            query["code_challenge"] = code_challenge
+            query["code_challenge_method"] = "S256"
+            _LOGGER.debug("PKCE enabled; code_challenge added to consent authorize request")
+
+        self.hass.data["_openid_state"][state] = original_params
+        _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))
+
         encoded_query = urlencode(query)
         url = conf[CONF_AUTHORIZE_URL] + "?" + encoded_query
 
@@ -331,6 +366,7 @@ class OpenIDCallbackView(HomeAssistantView):
                 client_secret=conf[CONF_CLIENT_SECRET],
                 redirect_uri=redirect_uri,
                 use_header_auth=bool(conf.get(CONF_USE_HEADER_AUTH, True)),
+                code_verifier=params.get(_PKCE_VERIFIER_KEY),
             )
 
             access_token = token_data.get("access_token")
