@@ -13,7 +13,8 @@ from aiohttp.web import FileResponse, Request, Response
 
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS, DOMAIN
+from .config_helpers import get_active_config
+from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,12 +24,17 @@ def _read_file_content(path: Path) -> str:
     with path.open(encoding="utf-8") as f:
         return f.read()
 
+
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
     """Patch the built-in /auth/login_flow page to not return any actual login data."""
 
     _original_post_function = None
 
     async def post(request: Request) -> Response:
+        config = get_active_config(hass)
+        if config is None:
+            return await _original_post_function(request)
+
         remote_ip = request.headers.get("X-Forwarded-For", request.remote)
         if remote_ip and "," in remote_ip:
             remote_ip = remote_ip.split(",", 1)[0]
@@ -39,12 +45,12 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
             except ValueError:
                 ip_obj = None
             if ip_obj is not None:
-                for network in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
+                for network in config.get(CONF_TRUSTED_IPS, []):
                     if ip_obj in network:
                         is_trusted = True
                         break
 
-        should_block = hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False) and not is_trusted
+        should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
         if not should_block:
             content = json.loads((await _original_post_function(request)).text)
@@ -62,7 +68,7 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
             }
 
         content[CONF_BLOCK_LOGIN] = should_block
-        content[CONF_OPENID_TEXT] = hass.data[DOMAIN].get(
+        content[CONF_OPENID_TEXT] = config.get(
             CONF_OPENID_TEXT, "OpenID / OAuth2 Authentication"
         )
 
@@ -91,6 +97,10 @@ def override_authorize_route(hass: HomeAssistant) -> None:
     _original_get_function = None
 
     async def get(request: Request) -> Response:
+        config = get_active_config(hass)
+        if config is None:
+            return await _original_get_function(request)
+
         remote_ip = request.headers.get("X-Forwarded-For", request.remote)
         if remote_ip and "," in remote_ip:
             remote_ip = remote_ip.split(",", 1)[0]
@@ -101,12 +111,12 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             except ValueError:
                 ip_obj = None
             if ip_obj is not None:
-                for network in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
+                for network in config.get(CONF_TRUSTED_IPS, []):
                     if ip_obj in network:
                         is_trusted = True
                         break
 
-        should_block = hass.data[DOMAIN].get(CONF_BLOCK_LOGIN, False) and not is_trusted
+        should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
         if not should_block:
             response = await _original_get_function(request)

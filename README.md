@@ -22,88 +22,55 @@ Selection of commonly used OpenID Connect providers:
 2. Copy the `custom_components` directory of this repository to your Home Assistant `config` directory.
 3. Restart Home Assistant.
 
-## Configuration
+## Setup (Config Flow)
 
-Firstly you need to configure your IdP. Create an OpenID/OAuth2 provider according to the documentation of your provider.
-Note the client id and client secret as you will need it setting up this integration in Home Assistant. Your provider should be configured to have this callback URL: `https://YOUR_HOME_ASSISTANT_DOMAIN/auth/openid/callback`.
+The recommended setup method is the Home Assistant UI config flow.
 
-1. Add the following configuration to your `configuration.yaml` file:
-   ```yaml
-   openid:
-     client_id: YOUR_CLIENT_ID
-     client_secret: YOUR_CLIENT_SECRET
-     configure_url: "https://YOUR_IDP_DOMAIN/.well-known/openid-configuration"  # Replace with your Identity Provider's URL
-     username_field: "preferred_username"  # Adjust based on your IdP's user info response
-     scope: "openid profile email"
-     block_login: false
-     trusted_ips: # List of CIDR blocks that are not affected by block_login
-        - "192.168.2.0/24"
-        - "192.168.2.5/32"
-        - "10.0.0.0/8"
-     openid_text: "Login with OpenID / OAuth2"  # Text to display on the login page
-     create_user: true  # Automatically create users on first login
-     use_pkce: true  # Enable PKCE (auto-detected from discovery when omitted)
-   ```
-2. Replace the placeholders (`YOUR_CLIENT_ID`, `YOUR_CLIENT_SECRET`, etc.) with the details provided by your Identity Provider.
-3. Restart Home Assistant.
+First configure your IdP according to your provider documentation and create an OpenID/OAuth2 client for Home Assistant.
+Use this callback URL in your IdP client configuration:
 
+`https://YOUR_HOME_ASSISTANT_DOMAIN/auth/openid/callback`
 
-**username_field**: This is the field in the user info response that Home Assistant will use as the username. Common values are `preferred_username`, `email`, or `sub`. Make sure the value of this field **exactly** matches the username. Otherwise you will get an error, that the account does not exist.
+Keep your client ID and client secret ready before starting the integration flow.
 
+### Configure in Home Assistant
 
-Now sign out of Home Assistant and you should see a `OpenID / OAuth2` option on the login page. Click it to be redirected to your Identity Provider for authentication.
+1. Open Home Assistant and go to **Settings -> Devices & Services**.
+2. Click **Add Integration** and select **OpenID / OAuth2 authentication**.
+3. In **Configure provider**, choose one of the following:
+  - **Use configure URL** (recommended): enter your provider's discovery URL, usually `https://YOUR_IDP_DOMAIN/.well-known/openid-configuration`.
+  - **Enter URLs manually**: enter provider endpoints directly.
+4. Review and confirm provider endpoints:
+  - Required: Authorization endpoint, Token endpoint, User info endpoint.
+  - Optional: Logout endpoint.
+  - PKCE:
+    - Discovery mode auto-detects PKCE (`S256`) support.
+    - Manual mode lets you set PKCE explicitly.
+5. Enter **Client ID** and **Client secret**.
+6. Configure identity mapping:
+  - **Requested scope** (default: `openid profile email`)
+  - **Username field** (default: `preferred_username`)
+7. Configure advanced options:
+  - **Block other login methods**
+  - **Trusted IP CIDR blocks** (one CIDR block per line)
+  - **Login button text**
+  - **Create Home Assistant users automatically**
+  - **Use HTTP Basic auth for the token request**
+  - **Custom error redirect URL** (optional)
+8. Finish the flow, sign out, and verify the **OpenID / OAuth2** button works on the login page.
 
-### Disable default login
+To change settings later, open the OpenID integration card and use **Reconfigure**.
 
-If you want to disable the default Home Assistant login and only allow OpenID authentication, set `block_login` to `true` in your configuration:
-```yaml
-   openid:
-     ...
-     block_login: true
-     ...
-```
+### Legacy YAML Configuration
 
-To allow certain IP ranges to still use the default login (e.g. for local network access), you can specify them in the `trusted_ips` list using CIDR notation.
-```yaml
-   openid:
-     ...
-     block_login: true
-     trusted_ips:
-       - "192.168.2.0/24"
-       - "192.168.2.5/32"
-       - "10.0.0.0/8"
-     ...
-```
+The `configuration.yaml` setup remains available as a legacy option.
+For YAML examples and all legacy options, see [LEGACY_CONFIGURATION.md](LEGACY_CONFIGURATION.md).
 
-**Make sure the OpenID / OAuth2 login works before blocking the default login!** If you block the default login and the OpenID authentication does not work, you will be locked out of your Home Assistant webinterface and will need to manually edit the `configuration.yaml` file to re-enable the default login.
-
-### PKCE (Proof Key for Code Exchange)
-
-**Auto-detection:** When `configure_url` is set and the discovery document advertises `S256` in `code_challenge_methods_supported`, PKCE is enabled automatically.
-
-**Manual override:** You can explicitly enable or disable PKCE regardless of what the discovery document says:
-```yaml
-openid:
-  ...
-  use_pkce: true   # force on
-  # use_pkce: false  # force off
-  ...
-```
-
-### Alternative Configuration
-
-If your IdP does not provide a `configure_url`, you can manually specify the endpoints in your configuration:
-```yaml
-   openid:
-     ...
-     authorize_url: "https://your-idp.com/oauth2/authorize"
-     token_url: "https://your-idp.com/oauth2/token"
-     user_info_url: "https://your-idp.com/oauth2/userinfo"
-     ...
-```
+Your YAML config will be imported into a config entry on every startup and created / updates the config entry. After the first successful import, you can remove the YAML config and manage everything via the UI.
 
 ## Troubleshooting
-- Verify that the `client_id`, `client_secret`, and URLs in your configuration are correct.
+- Verify that the client ID, client secret, and provider URLs are correct.
+- Confirm that `username_field` maps to the expected Home Assistant username claim (for example `preferred_username` or `email`).
 - Check the Home Assistant logs for any errors or warnings related to the OpenID integration.
 
   You may want to enable debug logging for the OpenID integration by adding the following to your `configuration.yaml`:
@@ -113,18 +80,14 @@ If your IdP does not provide a `configure_url`, you can manually specify the end
       logs:
         custom_components.openid: debug
     ```
-- If your IdP does not allow client id and client secret to be passed as "Authorization" header, you can set `use_auth_header` to `false` in your configuration:
-    ```yaml
-    openid:
-      ...
-      use_auth_header: false
-      ...
-    ```
+- If your IdP does not allow client ID and client secret in the Authorization header, disable **Use HTTP Basic auth for the token request** in the advanced step.
+- If your IdP does not provide a discovery document, choose **Enter URLs manually** in the config flow.
 
 ## Important Notes
 
 - This integration does not require a special proxy configuration (or even a proxy at all) to work.
-- Users must be manually added to Home Assistant.
+- If you enable **Block other login methods**, make sure OpenID login works first to avoid lockout.
+- Users can be created automatically when **Create Home Assistant users automatically** is enabled.
 - **Blocking a user in your authentication provider will not automatically block them in Home Assistant.** Users will still be able to access Home Assistant as long as their authentication remains valid. It is recommended to block users in Home Assistant as well, if needed.
 
 This integration is still in early stages of development and there can be issues as well as **security vulnerabilities**. Please use it at your own risk and report any issues you encounter.

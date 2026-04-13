@@ -1,0 +1,96 @@
+{
+  "title": "OpenID / OAuth2",
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
+      "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_cidr": "Enter one valid CIDR block per line",
+      "invalid_discovery": "The discovery endpoint did not return the required OpenID endpoints",
+      "required_fields": "Review the discovered endpoints and fill in any missing values"
+    },
+    "step": {
+      "advanced": {
+        "data": {
+          "block_login": "Block other login methods",
+          "create_user": "Create Home Assistant users automatically",
+          "error_url": "Custom error redirect URL",
+          "openid_text": "Login button text",
+          "trusted_ips_input": "Trusted IP CIDR blocks",
+          "use_auth_header": "Use HTTP Basic auth for the token request"
+        },
+        "data_description": {
+          "block_login": "Only allow OpenID login unless the client IP matches one of the trusted CIDR blocks below",
+          "create_user": "Automatically create a Home Assistant user the first time someone signs in",
+          "error_url": "Optional URL to redirect to instead of showing the built-in OpenID error page",
+          "openid_text": "Text shown on the Home Assistant login page",
+          "trusted_ips_input": "Enter one CIDR block per line",
+          "use_auth_header": "Send the client ID and secret in the Authorization header when exchanging the code for tokens"
+        },
+        "description": "Configure the remaining login behavior and defaults."
+      },
+      "credentials": {
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client secret"
+        },
+        "data_description": {
+          "client_id": "OAuth2/OpenID client ID for Home Assistant",
+          "client_secret": "OAuth2/OpenID client secret for Home Assistant"
+        },
+        "description": "Enter the client credentials Home Assistant should use with the provider."
+      },
+      "discovery": {
+        "data": {
+          "configure_url": "Configure URL"
+        },
+        "data_description": {
+          "configure_url": "Discovery endpoint, usually the provider's OpenID configuration URL"
+        },
+        "description": "Enter the configure URL to discover the provider endpoints automatically."
+      },
+      "identity": {
+        "data": {
+          "scope": "Requested scope",
+          "username_field": "Username field"
+        },
+        "data_description": {
+          "scope": "OAuth2/OpenID scope to request from the provider",
+          "username_field": "Claim to use as the Home Assistant username, for example `preferred_username` or `email`"
+        },
+        "description": "Choose which claims to request and which user info field should become the Home Assistant username."
+      },
+      "provider": {
+        "data": {
+          "authorize_url": "Authorization endpoint",
+          "logout_url": "Logout endpoint",
+          "token_url": "Token endpoint",
+          "use_pkce": "Use PKCE",
+          "user_info_url": "User info endpoint"
+        },
+        "data_description": {
+          "authorize_url": "Authorization endpoint",
+          "logout_url": "Optional logout endpoint",
+          "token_url": "Token endpoint",
+          "use_pkce": "Whether the authorization flow should use PKCE",
+          "user_info_url": "User info endpoint"
+        },
+        "description": "{pkce_message}"
+      },
+      "reconfigure": {
+        "description": "[%key:component::openid::config::step::user::description%]"
+      },
+      "user": {
+        "description": "Choose whether to discover the provider endpoints from a configure URL or enter the endpoint URLs manually.",
+        "menu_options": {
+          "discovery": "Use configure URL",
+          "manual": "Enter URLs manually"
+        },
+        "title": "Configure provider"
+      }
+    }
+  }
+}
