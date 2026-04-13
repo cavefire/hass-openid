@@ -9,6 +9,7 @@
       "cannot_connect": "Failed to connect",
       "invalid_cidr": "Enter one valid CIDR block per line",
       "invalid_discovery": "The discovery endpoint did not return the required OpenID endpoints",
+      "invalid_ssl_certificate": "TLS certificate validation failed while connecting to the provider",
       "required_fields": "Review the discovered endpoints and fill in any missing values"
     },
     "step": {

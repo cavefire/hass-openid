@@ -9,6 +9,7 @@
       "cannot_connect": "Verbindung fehlgeschlagen",
       "invalid_cidr": "Gib pro Zeile einen gultigen CIDR-Block ein",
       "invalid_discovery": "Der Discovery-Endpunkt hat die erforderlichen OpenID-Endpunkte nicht geliefert",
+      "invalid_ssl_certificate": "Die TLS-Zertifikatsprüfung beim Verbinden mit dem Provider ist fehlgeschlagen",
       "required_fields": "Prufe die gefundenen Endpunkte und erganze fehlende Werte"
     },
     "step": {

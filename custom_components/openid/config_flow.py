@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from ipaddress import ip_network
 import logging
+import ssl
 from typing import Any
 
+from aiohttp import ClientConnectorCertificateError, ClientConnectorSSLError
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -55,6 +57,13 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 CONF_TRUSTED_IPS_INPUT = "trusted_ips_input"
+
+TLS_DISCOVERY_EXCEPTIONS = (
+    ClientConnectorCertificateError,
+    ClientConnectorSSLError,
+    ssl.CertificateError,
+    ssl.SSLError,
+)
 
 
 def _url_selector() -> TextSelector:
@@ -138,9 +147,16 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                     user_input[CONF_CONFIGURE_URL],
                     validate_tls=validate_tls,
                 )
-            except Exception:
-                _LOGGER.exception("OpenID discovery failed")
-                errors["base"] = "cannot_connect"
+            except Exception as err:
+                if validate_tls and isinstance(err, TLS_DISCOVERY_EXCEPTIONS):
+                    _LOGGER.warning(
+                        "OpenID discovery failed because TLS validation failed: %s",
+                        err,
+                    )
+                    errors["base"] = "invalid_ssl_certificate"
+                else:
+                    _LOGGER.exception("OpenID discovery failed")
+                    errors["base"] = "cannot_connect"
             else:
                 if not all(
                     discovered.get(key)

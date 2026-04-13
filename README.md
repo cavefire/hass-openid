@@ -40,9 +40,11 @@ Keep your client ID and client secret ready before starting the integration flow
 3. In **Configure provider**, choose one of the following:
   - **Use configure URL** (recommended): enter your provider's discovery URL, usually `https://YOUR_IDP_DOMAIN/.well-known/openid-configuration`.
   - **Enter URLs manually**: enter provider endpoints directly.
+  - Set **Validate TLS certificate** to control whether the provider certificate is verified.
 4. Review and confirm provider endpoints:
   - Required: Authorization endpoint, Token endpoint, User info endpoint.
   - Optional: Logout endpoint.
+  - **Validate TLS certificate** applies to discovery, token, and user info requests.
   - PKCE:
     - Discovery mode auto-detects PKCE (`S256`) support.
     - Manual mode lets you set PKCE explicitly.
@@ -66,7 +68,7 @@ To change settings later, open the OpenID integration card and use **Reconfigure
 The `configuration.yaml` setup remains available as a legacy option.
 For YAML examples and all legacy options, see [LEGACY_CONFIGURATION.md](LEGACY_CONFIGURATION.md).
 
-Your YAML config will be imported into a config entry on every startup and created / updates the config entry. After the first successful import, you can remove the YAML config and manage everything via the UI.
+Your YAML config is imported into a config entry on startup and will create or update that entry. After the first successful import, you can remove the YAML config and manage everything via the UI.
 
 ## Troubleshooting
 - Verify that the client ID, client secret, and provider URLs are correct.
@@ -82,11 +84,13 @@ Your YAML config will be imported into a config entry on every startup and creat
     ```
 - If your IdP does not allow client ID and client secret in the Authorization header, disable **Use HTTP Basic auth for the token request** in the advanced step.
 - If your IdP does not provide a discovery document, choose **Enter URLs manually** in the config flow.
+- If your IdP uses a self-signed or private CA certificate, disable **Validate TLS certificate** only if you trust that endpoint.
 
 ## Important Notes
 
 - This integration does not require a special proxy configuration (or even a proxy at all) to work.
 - If you enable **Block other login methods**, make sure OpenID login works first to avoid lockout.
+- Keep **Validate TLS certificate** enabled unless you explicitly need to connect to a trusted endpoint with a non-public certificate.
 - Users can be created automatically when **Create Home Assistant users automatically** is enabled.
 - **Blocking a user in your authentication provider will not automatically block them in Home Assistant.** Users will still be able to access Home Assistant as long as their authentication remains valid. It is recommended to block users in Home Assistant as well, if needed.
 
