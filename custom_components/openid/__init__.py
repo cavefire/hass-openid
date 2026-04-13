@@ -41,6 +41,7 @@ from .const import (
     CONF_USE_PKCE,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
+    CONF_VALIDATE_TLS,
     CRED_ID_TOKEN,
     CRED_LOGOUT_REDIRECT_URI,
     CRED_SESSION_STATE,
@@ -52,6 +53,7 @@ from .const import (
     DEFAULT_SCOPE,
     DEFAULT_USE_HEADER_AUTH,
     DEFAULT_USERNAME_FIELD,
+    DEFAULT_VALIDATE_TLS,
     DISCOVERY_PKCE_AVAILABLE,
     DOMAIN,
 )
@@ -76,6 +78,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
                 vol.Optional(CONF_ERROR_URL): cv.url,
+                vol.Optional(CONF_VALIDATE_TLS, default=DEFAULT_VALIDATE_TLS): cv.boolean,
                 vol.Optional(
                     CONF_USE_HEADER_AUTH, default=DEFAULT_USE_HEADER_AUTH
                 ): cv.boolean,
@@ -152,6 +155,8 @@ async def _async_prepare_config(
     hass: HomeAssistant, config: dict[str, Any]
 ) -> dict[str, Any]:
     """Prepare raw config for runtime use."""
+    config.setdefault(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS)
+
     if CONF_CONFIGURE_URL not in config:
         return config
 
@@ -165,7 +170,11 @@ async def _async_prepare_config(
     if not needs_discovery:
         return config
 
-    discovered = await async_discover_configuration(hass, config[CONF_CONFIGURE_URL])
+    discovered = await async_discover_configuration(
+        hass,
+        config[CONF_CONFIGURE_URL],
+        validate_tls=bool(config.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS)),
+    )
     for key in (CONF_AUTHORIZE_URL, CONF_TOKEN_URL, CONF_USER_INFO_URL):
         if key not in config and discovered.get(key):
             config[key] = discovered[key]

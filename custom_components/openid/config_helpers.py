@@ -16,7 +16,9 @@ from .const import (
     CONF_TOKEN_URL,
     CONF_TRUSTED_IPS,
     CONF_USER_INFO_URL,
+    CONF_VALIDATE_TLS,
     DATA_ACTIVE_CONFIG,
+    DEFAULT_VALIDATE_TLS,
     DISCOVERY_PKCE_AVAILABLE,
     DOMAIN,
 )
@@ -54,6 +56,7 @@ def set_active_config(
 def build_runtime_config(raw_config: dict[str, Any]) -> dict[str, Any]:
     """Normalize stored config for runtime use."""
     runtime_config = dict(raw_config)
+    runtime_config.setdefault(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS)
 
     trusted_networks: list[TrustedNetwork] = []
     trusted_ip_entries = runtime_config.get(CONF_TRUSTED_IPS, [])
@@ -73,10 +76,12 @@ def build_runtime_config(raw_config: dict[str, Any]) -> dict[str, Any]:
 
 
 async def async_discover_configuration(
-    hass: HomeAssistant, configure_url: str
+    hass: HomeAssistant,
+    configure_url: str,
+    validate_tls: bool = DEFAULT_VALIDATE_TLS,
 ) -> dict[str, Any]:
     """Fetch OpenID endpoints from the discovery endpoint."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
+    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
 
     _LOGGER.debug("Fetching OpenID configuration from %s", configure_url)
     async with session.get(configure_url) as resp:

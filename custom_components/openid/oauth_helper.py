@@ -8,6 +8,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
 
+from .config_helpers import get_active_config
+from .const import CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -19,11 +22,16 @@ async def exchange_code_for_token(
     client_id: str,
     client_secret: str,
     redirect_uri: str,
+    validate_tls: bool | None = None,
     use_header_auth: bool = True,
     code_verifier: str | None = None,
 ) -> dict[str, Any]:
     """Exchange the *authorisation code* for tokens at the IdP."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
+    if validate_tls is None:
+        config = get_active_config(hass) or {}
+        validate_tls = bool(config.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS))
+
+    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
 
     data = {
         "grant_type": "authorization_code",
@@ -56,10 +64,17 @@ async def exchange_code_for_token(
 
 
 async def fetch_user_info(
-    hass: HomeAssistant, user_info_url: str, access_token: str
+    hass: HomeAssistant,
+    user_info_url: str,
+    access_token: str,
+    validate_tls: bool | None = None,
 ) -> dict[str, Any]:
     """Fetch user information from the user info endpoint."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
+    if validate_tls is None:
+        config = get_active_config(hass) or {}
+        validate_tls = bool(config.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS))
+
+    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
     headers = {"Authorization": f"Bearer {access_token}"}
 
     _LOGGER.debug("Fetching user info from %s", user_info_url)

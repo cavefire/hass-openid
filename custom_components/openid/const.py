@@ -16,6 +16,7 @@ CONF_SCOPE = "scope"
 CONF_CREATE_USER = "create_user"
 CONF_BLOCK_LOGIN = "block_login"
 CONF_ERROR_URL = "error_url"
+CONF_VALIDATE_TLS = "validate_tls"
 CONF_USE_HEADER_AUTH = "use_auth_header"
 CONF_USE_PKCE = "use_pkce"
 CONF_OPENID_TEXT = "openid_text"
@@ -32,6 +33,7 @@ DISCOVERY_PKCE_AVAILABLE = "pkce_available"
 
 DEFAULT_SCOPE = "openid profile email"
 DEFAULT_USERNAME_FIELD = "preferred_username"
+DEFAULT_VALIDATE_TLS = True
 DEFAULT_USE_HEADER_AUTH = True
 FLOW_DEFAULT_BLOCK_LOGIN = False
 FLOW_DEFAULT_CREATE_USER = True

@@ -10,6 +10,7 @@
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_cidr": "Enter one valid CIDR block per line",
       "invalid_discovery": "The discovery endpoint did not return the required OpenID endpoints",
+      "invalid_ssl_certificate": "TLS certificate validation failed while connecting to the provider",
       "required_fields": "Review the discovered endpoints and fill in any missing values"
     },
     "step": {
@@ -45,10 +46,12 @@
       },
       "discovery": {
         "data": {
-          "configure_url": "Configure URL"
+          "configure_url": "Configure URL",
+          "validate_tls": "Validate TLS certificate"
         },
         "data_description": {
-          "configure_url": "Discovery endpoint, usually the provider's OpenID configuration URL"
+          "configure_url": "Discovery endpoint, usually the provider's OpenID configuration URL",
+          "validate_tls": "Verify the provider TLS certificate when fetching the discovery document"
         },
         "description": "Enter the configure URL to discover the provider endpoints automatically."
       },
@@ -69,14 +72,16 @@
           "logout_url": "Logout endpoint",
           "token_url": "Token endpoint",
           "use_pkce": "Use PKCE",
-          "user_info_url": "User info endpoint"
+          "user_info_url": "User info endpoint",
+          "validate_tls": "Validate TLS certificate"
         },
         "data_description": {
           "authorize_url": "Authorization endpoint",
           "logout_url": "Optional logout endpoint",
           "token_url": "Token endpoint",
           "use_pkce": "Whether the authorization flow should use PKCE",
-          "user_info_url": "User info endpoint"
+          "user_info_url": "User info endpoint",
+          "validate_tls": "Verify the provider TLS certificate for discovery, token, and user info requests"
         },
         "description": "{pkce_message}"
       },
