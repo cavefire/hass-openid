@@ -4,11 +4,11 @@
   "codeowners": [
     "@cavefire"
   ],
+  "config_flow": true,
   "dependencies": [
     "auth",
     "http"
   ],
-  "config_flow": true,
   "documentation": "https://github.com/cavefire/hass-openid",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/cavefire/hass-openid/issues",

@@ -110,6 +110,8 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Choose whether to use discovery or enter URLs manually."""
+        await self.async_set_unique_id(DOMAIN)
+
         if self.source != SOURCE_RECONFIGURE and self._async_current_entries():
             return self.async_abort(reason="single_instance_allowed")
 
