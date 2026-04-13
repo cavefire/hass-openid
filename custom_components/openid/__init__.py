@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from http import HTTPStatus
-from ipaddress import ip_network
 import logging
 from pathlib import Path
+from typing import Any
 
 import hass_frontend
 import voluptuous as vol
@@ -14,19 +13,25 @@ import voluptuous as vol
 from homeassistant.auth.models import Credentials
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import aiohttp_client, config_validation as cv
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from . import views as openid_views
+from . import ui_views as openid_views
 from .auth_provider import async_register_auth_provider
+from .config_helpers import (
+    async_discover_configuration,
+    get_active_config,
+    set_active_config,
+)
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
-    CONF_ERROR_URL,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
+    CONF_ERROR_URL,
     CONF_LOGOUT_URL,
     CONF_OPENID_TEXT,
     CONF_SCOPE,
@@ -39,6 +44,15 @@ from .const import (
     CRED_ID_TOKEN,
     CRED_LOGOUT_REDIRECT_URI,
     CRED_SESSION_STATE,
+    DATA_ACTIVE_CONFIG,
+    DATA_ACTIVE_ENTRY_ID,
+    DATA_AUTH_PROVIDER,
+    DATA_SHARED_INITIALIZED,
+    DATA_YAML_IMPORT_CONFIG,
+    DEFAULT_SCOPE,
+    DEFAULT_USE_HEADER_AUTH,
+    DEFAULT_USERNAME_FIELD,
+    DISCOVERY_PKCE_AVAILABLE,
     DOMAIN,
 )
 from .http_helper import override_authorize_login_flow, override_authorize_route
@@ -55,14 +69,16 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_TOKEN_URL): cv.url,
                 vol.Optional(CONF_USER_INFO_URL): cv.url,
                 vol.Optional(CONF_CONFIGURE_URL): cv.url,
-                vol.Optional(CONF_SCOPE, default="openid profile email"): cv.string,
+                vol.Optional(CONF_SCOPE, default=DEFAULT_SCOPE): cv.string,
                 vol.Optional(
-                    CONF_USERNAME_FIELD, default="preferred_username"
+                    CONF_USERNAME_FIELD, default=DEFAULT_USERNAME_FIELD
                 ): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
                 vol.Optional(CONF_ERROR_URL): cv.url,
-                vol.Optional(CONF_USE_HEADER_AUTH, default=True): cv.boolean,
+                vol.Optional(
+                    CONF_USE_HEADER_AUTH, default=DEFAULT_USE_HEADER_AUTH
+                ): cv.boolean,
                 vol.Optional(CONF_USE_PKCE): cv.boolean,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
@@ -80,34 +96,102 @@ CONFIG_SCHEMA = vol.Schema(
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the OpenID component."""
+    await _async_setup_shared(hass)
 
-    if DOMAIN not in config:
-        _LOGGER.error("Missing '%s' section in configuration.yaml", DOMAIN)
-        return False
+    yaml_config = config.get(DOMAIN)
+    if yaml_config:
+        try:
+            prepared_yaml_config = await _async_prepare_config(hass, dict(yaml_config))
+            hass.data[DOMAIN][DATA_YAML_IMPORT_CONFIG] = prepared_yaml_config
+            set_active_config(
+                hass,
+                prepared_yaml_config,
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("Failed to prepare YAML OpenID configuration: %s", err)
+            return False
 
-    hass.data[DOMAIN] = config[DOMAIN]
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(
+                DOMAIN,
+                context={"source": SOURCE_IMPORT},
+                data=prepared_yaml_config,
+            )
+        )
+
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up OpenID from a config entry."""
+    await _async_setup_shared(hass)
+    runtime_config = dict(entry.data)
+    if yaml_config := hass.data[DOMAIN].get(DATA_YAML_IMPORT_CONFIG):
+        runtime_config = dict(yaml_config)
+    else:
+        runtime_config = await _async_prepare_config(hass, runtime_config)
+    set_active_config(hass, runtime_config)
+    hass.data[DOMAIN][DATA_ACTIVE_ENTRY_ID] = entry.entry_id
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload an OpenID config entry."""
+    domain_data = hass.data.get(DOMAIN)
+    if not domain_data:
+        return True
+
+    if domain_data.get(DATA_ACTIVE_ENTRY_ID) == entry.entry_id:
+        domain_data.pop(DATA_ACTIVE_ENTRY_ID, None)
+        domain_data.pop(DATA_ACTIVE_CONFIG, None)
+
+    return True
+
+
+async def _async_prepare_config(
+    hass: HomeAssistant, config: dict[str, Any]
+) -> dict[str, Any]:
+    """Prepare raw config for runtime use."""
+    if CONF_CONFIGURE_URL not in config:
+        return config
+
+    needs_discovery = (
+        any(
+            key not in config
+            for key in (CONF_AUTHORIZE_URL, CONF_TOKEN_URL, CONF_USER_INFO_URL)
+        )
+        or CONF_USE_PKCE not in config
+    )
+    if not needs_discovery:
+        return config
+
+    discovered = await async_discover_configuration(hass, config[CONF_CONFIGURE_URL])
+    for key in (CONF_AUTHORIZE_URL, CONF_TOKEN_URL, CONF_USER_INFO_URL):
+        if key not in config and discovered.get(key):
+            config[key] = discovered[key]
+
+    if CONF_LOGOUT_URL not in config and discovered.get(CONF_LOGOUT_URL):
+        config[CONF_LOGOUT_URL] = discovered[CONF_LOGOUT_URL]
+
+    if CONF_USE_PKCE not in config:
+        config[CONF_USE_PKCE] = bool(discovered[DISCOVERY_PKCE_AVAILABLE])
+
+    return config
+
+
+async def _async_setup_shared(hass: HomeAssistant) -> None:
+    """Set up shared OpenID runtime resources."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get(DATA_SHARED_INITIALIZED):
+        return
+
     hass.data.setdefault("_openid_state", {})
     hass.data.setdefault("_openid_android_callbacks", {})
 
-    trusted_networks: list = []
-    for entry in hass.data[DOMAIN].get(CONF_TRUSTED_IPS, []):
-        try:
-            network = ip_network(entry, strict=False)
-        except ValueError:
-            _LOGGER.warning("Invalid trusted IP/network '%s'; ignoring", entry)
-            continue
-        trusted_networks.append(network)
-
-    hass.data[DOMAIN][CONF_TRUSTED_IPS] = trusted_networks
-
     async def _async_notify_idp_logout(credential: Credentials) -> None:
-        """Clear logout-related metadata from credentials.
-
-        The actual IdP logout is handled by the frontend (logout.js),
-        which redirects the user to the IdP logout URL so their browser
-        session can be properly cleared.
-        """
-        logout_url: str | None = hass.data[DOMAIN].get(CONF_LOGOUT_URL)
+        """Clear logout-related metadata from credentials."""
+        config = get_active_config(hass)
+        logout_url: str | None = config.get(CONF_LOGOUT_URL) if config else None
         if not logout_url:
             _LOGGER.debug("No logout URL configured; skipping logout metadata cleanup")
             return
@@ -124,17 +208,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
             _LOGGER.debug("Cleared logout metadata from credentials")
 
-    if not hass.data[DOMAIN].get("_remove_refresh_token_patched"):
+    if not domain_data.get("_remove_refresh_token_patched"):
         original_remove_refresh_token = hass.auth.async_remove_refresh_token
 
-        def _patched_remove_refresh_token(refresh_token):
+        def _patched_remove_refresh_token(refresh_token: Any) -> None:
             credential = getattr(refresh_token, "credential", None)
 
             if (
                 credential is not None
                 and getattr(credential, "auth_provider_type", None) == DOMAIN
             ):
-                logout_url = hass.data[DOMAIN].get(CONF_LOGOUT_URL)
+                config = get_active_config(hass)
+                logout_url = config.get(CONF_LOGOUT_URL) if config else None
                 has_logout_metadata = any(
                     credential.data.get(key)
                     for key in (
@@ -153,47 +238,34 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             original_remove_refresh_token(refresh_token)
 
         hass.auth.async_remove_refresh_token = _patched_remove_refresh_token
-        hass.data[DOMAIN]["_remove_refresh_token_patched"] = True
-        hass.data[DOMAIN]["_remove_refresh_token_original"] = (
-            original_remove_refresh_token
-        )
+        domain_data["_remove_refresh_token_patched"] = True
+        domain_data["_remove_refresh_token_original"] = original_remove_refresh_token
 
-    if CONF_CONFIGURE_URL in hass.data[DOMAIN]:
-        try:
-            await fetch_urls(hass, config[DOMAIN][CONF_CONFIGURE_URL])
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.error("Failed to fetch OpenID configuration: %s", e)
-            return False
-
-    # Preload HTML templates
     authorize_path = hass_frontend.where() / "authorize.html"
-    authorize_template = await asyncio.to_thread(
+    domain_data["authorize_template"] = await asyncio.to_thread(
         authorize_path.read_text, encoding="utf-8"
     )
-    hass.data[DOMAIN]["authorize_template"] = authorize_template
 
-    # Preload consent screen template
     consent_path = Path(__file__).parent / "consent_template.html"
-    consent_template = await asyncio.to_thread(consent_path.read_text, encoding="utf-8")
-    hass.data[DOMAIN]["consent_template"] = consent_template
+    domain_data["consent_template"] = await asyncio.to_thread(
+        consent_path.read_text, encoding="utf-8"
+    )
 
     error_path = Path(__file__).parent / "error_template.html"
-    error_template = await asyncio.to_thread(error_path.read_text, encoding="utf-8")
-    hass.data[DOMAIN]["error_template"] = error_template
+    domain_data["error_template"] = await asyncio.to_thread(
+        error_path.read_text, encoding="utf-8"
+    )
 
     android_waiting_path = Path(__file__).parent / "android_waiting_template.html"
-    android_waiting_template = await asyncio.to_thread(
+    domain_data["android_waiting_template"] = await asyncio.to_thread(
         android_waiting_path.read_text, encoding="utf-8"
     )
-    hass.data[DOMAIN]["android_waiting_template"] = android_waiting_template
 
     android_completed_path = Path(__file__).parent / "android_completed_template.html"
-    android_completed_template = await asyncio.to_thread(
+    domain_data["android_completed_template"] = await asyncio.to_thread(
         android_completed_path.read_text, encoding="utf-8"
     )
-    hass.data[DOMAIN]["android_completed_template"] = android_completed_template
 
-    # Serve the custom frontend JS that hooks into the login dialog
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
@@ -216,57 +288,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     add_extra_js_url(hass, "/openid/logout.js")
 
-    # Register routes
     hass.http.register_view(openid_views.OpenIDAuthorizeView(hass))
     hass.http.register_view(openid_views.OpenIDCallbackView(hass))
     hass.http.register_view(openid_views.OpenIDConsentView(hass))
     hass.http.register_view(openid_views.OpenIDAndroidStatusView(hass))
     hass.http.register_view(openid_views.OpenIDSessionView(hass))
 
-    # Patch /auth/authorize to inject our JS file.
     override_authorize_route(hass)
-
-    # Patch the login flow to include additional OpenID data.
     override_authorize_login_flow(hass)
 
-    provider = await async_register_auth_provider(hass)
-    hass.data[DOMAIN]["auth_provider"] = provider
-
-    return True
-
-
-async def fetch_urls(hass: HomeAssistant, configure_url: str) -> None:
-    """Fetch the OpenID URLs from the IdP's configuration endpoint."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=False)
-
-    try:
-        _LOGGER.debug("Fetching OpenID configuration from %s", configure_url)
-        async with session.get(configure_url) as resp:
-            if resp.status != HTTPStatus.OK:
-                raise RuntimeError(f"Configuration endpoint returned {resp.status}")  # noqa: TRY301
-
-            config_data = await resp.json()
-
-        # Update the configuration with fetched URLs
-        hass.data[DOMAIN][CONF_AUTHORIZE_URL] = config_data.get(
-            "authorization_endpoint"
-        )
-        hass.data[DOMAIN][CONF_TOKEN_URL] = config_data.get("token_endpoint")
-        hass.data[DOMAIN][CONF_USER_INFO_URL] = config_data.get("userinfo_endpoint")
-        if (
-            logout_endpoint := config_data.get("end_session_endpoint")
-        ) and not hass.data[DOMAIN].get(CONF_LOGOUT_URL):
-            hass.data[DOMAIN][CONF_LOGOUT_URL] = logout_endpoint
-
-        if CONF_USE_PKCE not in hass.data[DOMAIN]:
-            pkce_methods = config_data.get("code_challenge_methods_supported", [])
-            pkce_auto = "S256" in pkce_methods
-            hass.data[DOMAIN][CONF_USE_PKCE] = pkce_auto
-            if pkce_auto:
-                _LOGGER.info("PKCE (S256) auto-enabled via discovery")
-            else:
-                _LOGGER.debug("PKCE not auto-enabled (S256 not in code_challenge_methods_supported)")
-
-        _LOGGER.info("OpenID configuration loaded successfully")
-    except Exception as e:  # noqa: BLE001
-        _LOGGER.error("Failed to fetch OpenID configuration: %s", e)
+    domain_data[DATA_AUTH_PROVIDER] = await async_register_auth_provider(hass)
+    domain_data[DATA_SHARED_INITIALIZED] = True
