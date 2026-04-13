@@ -44,10 +44,12 @@
       },
       "discovery": {
         "data": {
-          "configure_url": "Configure-URL"
+          "configure_url": "Configure-URL",
+          "validate_tls": "TLS-Zertifikat prüfen"
         },
         "data_description": {
-          "configure_url": "Discovery-Endpunkt, ublicherweise die OpenID-Konfigurations-URL des Providers"
+          "configure_url": "Discovery-Endpunkt, ublicherweise die OpenID-Konfigurations-URL des Providers",
+          "validate_tls": "Prüfe das TLS-Zertifikat des Providers beim Abrufen des Discovery-Dokuments"
         },
         "description": "Gib die Configure-URL ein, um die Provider-Endpunkte automatisch zu erkennen."
       },
@@ -68,14 +70,16 @@
           "logout_url": "Logout-Endpunkt",
           "token_url": "Token-Endpunkt",
           "use_pkce": "PKCE verwenden",
-          "user_info_url": "User-Info-Endpunkt"
+          "user_info_url": "User-Info-Endpunkt",
+          "validate_tls": "TLS-Zertifikat prüfen"
         },
         "data_description": {
           "authorize_url": "Autorisierungs-Endpunkt",
           "logout_url": "Optionaler Logout-Endpunkt",
           "token_url": "Token-Endpunkt",
           "use_pkce": "Ob der Autorisierungsfluss PKCE verwenden soll",
-          "user_info_url": "User-Info-Endpunkt"
+          "user_info_url": "User-Info-Endpunkt",
+          "validate_tls": "Prüfe das TLS-Zertifikat des Providers für Discovery-, Token- und User-Info-Anfragen"
         },
         "description": "{pkce_message}"
       },

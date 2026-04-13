@@ -38,9 +38,11 @@ from .const import (
     CONF_USE_PKCE,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
+    CONF_VALIDATE_TLS,
     DEFAULT_SCOPE,
     DEFAULT_USE_HEADER_AUTH,
     DEFAULT_USERNAME_FIELD,
+    DEFAULT_VALIDATE_TLS,
     DISCOVERY_PKCE_AVAILABLE,
     DOMAIN,
     FLOW_DEFAULT_BLOCK_LOGIN,
@@ -129,9 +131,12 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            validate_tls = bool(user_input.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS))
             try:
                 discovered = await async_discover_configuration(
-                    self.hass, user_input[CONF_CONFIGURE_URL]
+                    self.hass,
+                    user_input[CONF_CONFIGURE_URL],
+                    validate_tls=validate_tls,
                 )
             except Exception:
                 _LOGGER.exception("OpenID discovery failed")
@@ -150,6 +155,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._config_data.update(
                         {
                             CONF_CONFIGURE_URL: user_input[CONF_CONFIGURE_URL],
+                            CONF_VALIDATE_TLS: validate_tls,
                             CONF_AUTHORIZE_URL: discovered[CONF_AUTHORIZE_URL],
                             CONF_TOKEN_URL: discovered[CONF_TOKEN_URL],
                             CONF_USER_INFO_URL: discovered[CONF_USER_INFO_URL],
@@ -167,6 +173,9 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
 
         suggested_values = user_input or {
             CONF_CONFIGURE_URL: self._config_data.get(CONF_CONFIGURE_URL, ""),
+            CONF_VALIDATE_TLS: self._config_data.get(
+                CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS
+            ),
         }
 
         return self.async_show_form(
@@ -175,6 +184,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Schema(
                     {
                         vol.Required(CONF_CONFIGURE_URL): _url_selector(),
+                        vol.Required(CONF_VALIDATE_TLS): BooleanSelector(),
                     }
                 ),
                 suggested_values,
@@ -208,6 +218,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Skip discovery and enter endpoints manually."""
         self._config_data.pop(CONF_CONFIGURE_URL, None)
+        self._config_data.setdefault(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS)
         self._pkce_availability_known = False
         self._pkce_available = bool(self._config_data.get(CONF_USE_PKCE, False))
         return await self.async_step_provider(user_input)
@@ -236,6 +247,9 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_AUTHORIZE_URL: user_input[CONF_AUTHORIZE_URL].strip(),
                         CONF_TOKEN_URL: user_input[CONF_TOKEN_URL].strip(),
                         CONF_USER_INFO_URL: user_input[CONF_USER_INFO_URL].strip(),
+                        CONF_VALIDATE_TLS: bool(
+                            user_input.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS)
+                        ),
                     }
                 )
                 logout_url = user_input.get(CONF_LOGOUT_URL, "").strip()
@@ -256,6 +270,9 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_TOKEN_URL: self._config_data.get(CONF_TOKEN_URL, ""),
             CONF_USER_INFO_URL: self._config_data.get(CONF_USER_INFO_URL, ""),
             CONF_LOGOUT_URL: self._config_data.get(CONF_LOGOUT_URL, ""),
+            CONF_VALIDATE_TLS: self._config_data.get(
+                CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS
+            ),
             CONF_USE_PKCE: self._config_data.get(CONF_USE_PKCE, False),
         }
 
@@ -265,9 +282,13 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                 "entered manually. Enable it only if your provider supports S256."
             )
         elif self._pkce_available:
-            pkce_message = "PKCE (S256) is available for this provider. You can disable it if needed."
+            pkce_message = (
+                "PKCE (S256) is available for this provider. You can disable it if needed."
+            )
         else:
-            pkce_message = "PKCE (S256) is not advertised by this provider, so it cannot be enabled."
+            pkce_message = (
+                "PKCE (S256) is not advertised by this provider, so it cannot be enabled."
+            )
 
         return self.async_show_form(
             step_id="provider",
@@ -278,6 +299,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                         vol.Required(CONF_TOKEN_URL): _url_selector(),
                         vol.Required(CONF_USER_INFO_URL): _url_selector(),
                         vol.Required(CONF_LOGOUT_URL, default=""): _url_selector(),
+                        vol.Required(CONF_VALIDATE_TLS): BooleanSelector(),
                         vol.Required(CONF_USE_PKCE): BooleanSelector(
                             BooleanSelectorConfig(
                                 read_only=(
