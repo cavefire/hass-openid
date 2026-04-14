@@ -19,15 +19,15 @@
           "create_user": "Home-Assistant-Benutzer automatisch erstellen",
           "error_url": "Benutzerdefinierte Fehler-Weiterleitungs-URL",
           "openid_text": "Text der Anmeldeschaltflache",
-          "trusted_ips_input": "Vertrauenswurdige IP-CIDR-Blocke",
+          "trusted_ips_input": "Vertrauenswurdige IPv4-/IPv6-CIDR-Blöcke",
           "use_auth_header": "HTTP-Basic-Authentifizierung fur den Token-Request verwenden"
         },
         "data_description": {
-          "block_login": "Erlaube nur die OpenID-Anmeldung, es sei denn, die Client-IP entspricht einem der vertrauenswurdigen CIDR-Blocke unten",
+          "block_login": "Erlaube nur die OpenID-Anmeldung, es sei denn, die Client-IP entspricht einem der vertrauenswurdigen IPv4- oder IPv6-CIDR-Blöcke unten",
           "create_user": "Erstellt automatisch einen Home-Assistant-Benutzer, wenn sich jemand zum ersten Mal anmeldet",
           "error_url": "Optionale URL, zu der statt der integrierten OpenID-Fehlerseite umgeleitet wird",
           "openid_text": "Text, der auf der Home-Assistant-Anmeldeseite angezeigt wird",
-          "trusted_ips_input": "Gib pro Zeile einen CIDR-Block ein",
+          "trusted_ips_input": "Gib pro Zeile einen IPv4- oder IPv6-CIDR-Block ein",
           "use_auth_header": "Sende Client-ID und Secret im Authorization-Header beim Austausch des Codes gegen Tokens"
         },
         "description": "Konfiguriere das verbleibende Anmeldeverhalten und die Standardwerte."
