@@ -2,7 +2,7 @@
 
 import base64
 from http import HTTPStatus
-from ipaddress import ip_address
+from ipaddress import IPv4Address, IPv6Address, ip_address
 import json
 import logging
 from pathlib import Path
@@ -18,11 +18,46 @@ from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS
 
 _LOGGER = logging.getLogger(__name__)
 
+type RequestIP = IPv4Address | IPv6Address
+
 
 def _read_file_content(path: Path) -> str:
     """Read file content."""
     with path.open(encoding="utf-8") as f:
         return f.read()
+
+
+def _extract_request_ip(request: Request) -> RequestIP | None:
+    """Extract and parse the client IP from the request headers."""
+    remote_ip = request.headers.get("X-Forwarded-For", request.remote)
+    if not remote_ip:
+        return None
+
+    candidate = remote_ip.split(",", 1)[0].strip()
+    if not candidate:
+        return None
+
+    if candidate.startswith("[") and "]" in candidate:
+        candidate = candidate[1 : candidate.index("]")]
+
+    if candidate.count(":") == 1 and "." in candidate:
+        candidate = candidate.split(":", 1)[0]
+
+    if "%" in candidate:
+        candidate = candidate.split("%", 1)[0]
+
+    try:
+        return ip_address(candidate)
+    except ValueError:
+        return None
+
+
+def _is_trusted_request(request: Request, config: dict) -> bool:
+    """Return whether the request client IP matches a trusted network."""
+    if not (ip_obj := _extract_request_ip(request)):
+        return False
+
+    return any(ip_obj in network for network in config.get(CONF_TRUSTED_IPS, []))
 
 
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
@@ -35,21 +70,7 @@ def override_authorize_login_flow(hass: HomeAssistant) -> None:
         if config is None:
             return await _original_post_function(request)
 
-        remote_ip = request.headers.get("X-Forwarded-For", request.remote)
-        if remote_ip and "," in remote_ip:
-            remote_ip = remote_ip.split(",", 1)[0]
-        is_trusted = False
-        if remote_ip:
-            try:
-                ip_obj = ip_address(remote_ip.strip())
-            except ValueError:
-                ip_obj = None
-            if ip_obj is not None:
-                for network in config.get(CONF_TRUSTED_IPS, []):
-                    if ip_obj in network:
-                        is_trusted = True
-                        break
-
+        is_trusted = _is_trusted_request(request, config)
         should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
         if not should_block:
@@ -101,21 +122,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
         if config is None:
             return await _original_get_function(request)
 
-        remote_ip = request.headers.get("X-Forwarded-For", request.remote)
-        if remote_ip and "," in remote_ip:
-            remote_ip = remote_ip.split(",", 1)[0]
-        is_trusted = False
-        if remote_ip:
-            try:
-                ip_obj = ip_address(remote_ip.strip())
-            except ValueError:
-                ip_obj = None
-            if ip_obj is not None:
-                for network in config.get(CONF_TRUSTED_IPS, []):
-                    if ip_obj in network:
-                        is_trusted = True
-                        break
-
+        is_trusted = _is_trusted_request(request, config)
         should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
         if not should_block:

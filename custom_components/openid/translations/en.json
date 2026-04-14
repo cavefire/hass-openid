@@ -18,15 +18,15 @@
           "create_user": "Create Home Assistant users automatically",
           "error_url": "Custom error redirect URL",
           "openid_text": "Login button text",
-          "trusted_ips_input": "Trusted IP CIDR blocks",
+          "trusted_ips_input": "Trusted IPv4/IPv6 CIDR blocks",
           "use_auth_header": "Use HTTP Basic auth for the token request"
         },
         "data_description": {
-          "block_login": "Only allow OpenID login unless the client IP matches one of the trusted CIDR blocks below",
+          "block_login": "Only allow OpenID login unless the client IP matches one of the trusted IPv4 or IPv6 CIDR blocks below",
           "create_user": "Automatically create a Home Assistant user the first time someone signs in",
           "error_url": "Optional URL to redirect to instead of showing the built-in OpenID error page",
           "openid_text": "Text shown on the Home Assistant login page",
-          "trusted_ips_input": "Enter one CIDR block per line",
+          "trusted_ips_input": "Enter one IPv4 or IPv6 CIDR block per line",
           "use_auth_header": "Send the client ID and secret in the Authorization header when exchanging the code for tokens"
         },
         "description": "Configure the remaining login behavior and defaults."

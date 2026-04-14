@@ -62,7 +62,9 @@ def _url_selector() -> TextSelector:
 
 def _text_selector(multiline: bool = False) -> TextSelector:
     """Return a plain text selector."""
-    return TextSelector(TextSelectorConfig(multiline=multiline))
+    return TextSelector(
+        TextSelectorConfig(type=TextSelectorType.TEXT, multiline=multiline)
+    )
 
 
 def _password_selector() -> TextSelector:
