@@ -47,7 +47,7 @@ from .const import (
     CRED_SESSION_STATE,
     DOMAIN,
 )
-from .oauth_helper import exchange_code_for_token, fetch_user_info
+from .oauth_helper import exchange_code_for_token, fetch_user_info , is_speculative_request
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,23 +125,6 @@ class OpenIDAuthorizeView(HomeAssistantView):
 
         return True
 
-    def is_speculative_request(self, request):
-        sec_purpose = request.headers.get("Sec-Purpose", "").lower()
-        
-        purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
-       
-        if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
-            _LOGGER.debug(
-                "This is a speculative request. "
-                "Sec-Purpose=%s Purpose=%s URL=%s",
-                request.headers.get("Sec-Purpose"),
-                request.headers.get("Purpose"),
-                request.url,
-            )
-            return True
-
-        return  False
-
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
         conf: dict[str, str] = self.hass.data[DOMAIN]
@@ -158,67 +141,9 @@ class OpenIDAuthorizeView(HomeAssistantView):
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
             return await self._show_consent_screen(request, params)
-        elif self.is_speculative_request(request) and not activated:
+        elif is_speculative_request(request) and not activated:
             current_url = str(request.url)
-            html = f"""<!doctype html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1">
-          <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-          <meta http-equiv="Pragma" content="no-cache">
-          <meta http-equiv="Expires" content="0">
-          <title>Loading</title>
-          <style>
-            html, body {{
-              margin: 0;
-              height: 100%;
-              background: #0f1722;
-              color: #d7e3f4;
-              font-family: system-ui, sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }}
-          </style>
-        </head>
-        <body>
-          <div>Opening sign-in</div>
-          <script>
-            const target = {json.dumps(current_url)};
-            const restart = () => {{
-              const url = new URL(target);
-              url.searchParams.set("_activated", "1");
-              window.location.replace(url.toString());
-            }};
-
-            // If already visible and not prerendering, continue immediately.
-            if (!document.prerendering && document.visibilityState === "visible") {{
-              restart();
-            }} else {{
-              document.addEventListener("visibilitychange", () => {{
-                if (document.visibilityState === "visible") restart();
-              }}, {{ once: true }});
-
-              if ("onprerenderingchange" in document) {{
-                document.addEventListener("prerenderingchange", restart, {{ once: true }});
-              }}
-            }}
-          </script>
-        </body>
-        </html>"""
-            return Response(
-                status=HTTPStatus.OK,
-                content_type="text/html",
-                text=html,
-                headers={
-                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                    "Vary": "Sec-Purpose, Purpose",
-                },
-            )
-            return await self._show_consent_screen(request, params)
+            return _show_prerender( self.hass, current_url) 
 
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
@@ -945,6 +870,32 @@ class OpenIDAndroidStatusView(HomeAssistantView):
             content_type="application/json",
         )
 
+def _show_prerender(
+    hass: HomeAssistant,
+    current_url: str,
+) -> Response:
+    # make sure the alert_type and alert_message can be safely displayed
+    conf: dict[str, Any] | None = hass.data.get(DOMAIN)
+    safe_current_url = current_url.replace("'", "%27").replace('"', "%22")
+
+    template_content = hass.data[DOMAIN]["prerender_shim_template"]
+    template = Template(template_content)
+    html = template.substitute(
+        current_url=current_url,
+        redirect_url=safe_redirect_url,
+    )
+
+    return Response(
+        status=HTTPStatus.OK,
+        content_type="text/html",
+        text=html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Vary": "Sec-Purpose, Purpose",
+        },
+    )
 
 def _show_error(
     hass: HomeAssistant,

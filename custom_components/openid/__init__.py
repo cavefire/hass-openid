@@ -267,6 +267,11 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
         error_path.read_text, encoding="utf-8"
     )
 
+    prerender_shim_path = Path(__file__).parent / "prerender_shim_template.html"
+    domain_data["prerender_shim_template"] = await asyncio.to_thread(
+        prerender_shim_path.read_text, encoding="utf-8"
+    )
+
     android_waiting_path = Path(__file__).parent / "android_waiting_template.html"
     domain_data["android_waiting_template"] = await asyncio.to_thread(
         android_waiting_path.read_text, encoding="utf-8"
