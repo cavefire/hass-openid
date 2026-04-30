@@ -48,7 +48,6 @@ from .const import (
     DOMAIN,
 )
 from .oauth_helper import exchange_code_for_token, fetch_user_info
-from .http_helper import is_speculative_request
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -142,9 +141,6 @@ class OpenIDAuthorizeView(HomeAssistantView):
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
             return await self._show_consent_screen(request, params)
-        elif is_speculative_request(request) and not activated:
-            current_url = str(request.url)
-            return _show_prerender( self.hass, current_url) 
 
         # Prefer client-provided state (Music Assistant) so the same value is returned
         # through the entire flow. Try both "state" and explicit "client_state" (forwarded by JS).
@@ -870,33 +866,6 @@ class OpenIDAndroidStatusView(HomeAssistantView):
             text=json.dumps({"status": "pending"}),
             content_type="application/json",
         )
-
-def _show_prerender(
-    hass: HomeAssistant,
-    current_url: str,
-) -> Response:
-    # make sure the alert_type and alert_message can be safely displayed
-    conf: dict[str, Any] | None = hass.data.get(DOMAIN)
-    safe_current_url = current_url.replace("'", "%27").replace('"', "%22")
-
-    template_content = hass.data[DOMAIN]["prerender_shim_template"]
-    template = Template(template_content)
-    html = template.substitute(
-        current_url=current_url,
-        redirect_url=safe_current_url,
-    )
-
-    return Response(
-        status=HTTPStatus.OK,
-        content_type="text/html",
-        text=html,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Vary": "Sec-Purpose, Purpose",
-        },
-    )
 
 def _show_error(
     hass: HomeAssistant,
