@@ -26,24 +26,6 @@ def _read_file_content(path: Path) -> str:
     with path.open(encoding="utf-8") as f:
         return f.read()
 
-def is_speculative_request(request):
-    sec_purpose = request.headers.get("Sec-Purpose", "").lower()
-        
-    purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
-       
-    if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
-        _LOGGER.debug(
-            "override_authorize - This is a speculative request. "
-            "Sec-Purpose=%s Purpose=%s URL=%s",
-            request.headers.get("Sec-Purpose"),
-            request.headers.get("Purpose"),
-            request.url,
-        )
-        return True
-    
-    return  False
-
-
 def _extract_request_ip(request: Request) -> RequestIP | None:
     """Extract and parse the client IP from the request headers."""
     remote_ip = request.headers.get("X-Forwarded-For", request.remote)
