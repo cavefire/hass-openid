@@ -119,3 +119,13 @@ openid:
   error_url: "https://your.example/error"
   ...
 ```
+
+Optional post logout url redirect:
+Allows you to customize the post logout page that the the IDP will redirect to after it finishes processing.
+
+```yaml
+openid:
+  ...
+  post_logout_url: "https://your.example/custom_post_logout"
+  ...
+```
