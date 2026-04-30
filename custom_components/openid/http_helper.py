@@ -9,7 +9,7 @@ from pathlib import Path
 import secrets
 from urllib.parse import urlencode
 
-from aiohttp.web import FileResponse, Request, Response, HTTPFound
+from aiohttp.web import FileResponse, Request, Response
 
 from homeassistant.core import HomeAssistant
 
@@ -25,6 +25,7 @@ def _read_file_content(path: Path) -> str:
     """Read file content."""
     with path.open(encoding="utf-8") as f:
         return f.read()
+
 
 def _extract_request_ip(request: Request) -> RequestIP | None:
     """Extract and parse the client IP from the request headers."""
@@ -124,44 +125,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
         is_trusted = _is_trusted_request(request, config)
         should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
 
-        if should_block and is_speculative_request(request) and request.query.get("_activated") != "1":
-            current_url = str(request.url)
-            # We return a tiny shim of a page that waits to be visible and solves browser doing prefetch/prerender calls
-            # This prevents bookmarks to home-assistant from hanging due to a prerender call.
-            # The page waits for it to be visible then replaces url to the actived url starting oauth signin.
-            html = f"""<!doctype html>
-        <html><body>
-        <script>
-        const target = {json.dumps(current_url)};
-        const restart = () => {{
-          const u = new URL(target);
-          u.searchParams.set("_activated", "1");
-          window.location.replace(u.toString());
-        }};
-        if (!document.prerendering && document.visibilityState === "visible") {{
-          restart();
-        }} else {{
-          document.addEventListener("visibilitychange", () => {{
-            if (document.visibilityState === "visible") restart();
-          }}, {{ once: true }});
-        }}
-        </script>
-        </body></html>"""
-            return Response(
-                status=HTTPStatus.OK,
-                content_type="text/html",
-                text=html,
-                headers={
-                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                    "Vary": "Sec-Purpose, Purpose",
-                },
-            )
-
         if not should_block:
-            _LOGGER.debug(f"override_authorize - Showing login URL={request.url}" )
-
             response = await _original_get_function(request)
             if isinstance(response, FileResponse):
                 path = response._path  # noqa: SLF001
@@ -181,7 +145,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             "override_authorize_route intercepted /auth/authorize with params: %s",
             params,
         )
-    
+
         base_url = f"{request.scheme}://{request.host}"
         params["base_url"] = base_url
 
@@ -274,5 +238,5 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             get_handler._handler = get  # noqa: SLF001
             # Reset the routes map to ensure only our GET exists.
             resource._routes = {"GET": get_handler}  # noqa: SLF001
-            _LOGGER.debug("Overrode /auth/authorize route - custom JS injected")
+            _LOGGER.debug("Overrode /auth/authorize route – custom JS injected")
             break
