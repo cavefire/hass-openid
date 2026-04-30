@@ -47,7 +47,8 @@ from .const import (
     CRED_SESSION_STATE,
     DOMAIN,
 )
-from .oauth_helper import exchange_code_for_token, fetch_user_info , is_speculative_request
+from .oauth_helper import exchange_code_for_token, fetch_user_info
+from .http_helper import is_speculative_request
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -882,7 +883,7 @@ def _show_prerender(
     template = Template(template_content)
     html = template.substitute(
         current_url=current_url,
-        redirect_url=safe_redirect_url,
+        redirect_url=safe_current_url,
     )
 
     return Response(

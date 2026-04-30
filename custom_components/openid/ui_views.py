@@ -33,6 +33,7 @@ from .const import (
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
+    CONF_POST_LOGOUT_URL,
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USE_HEADER_AUTH,
@@ -459,11 +460,14 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
 
         credential_data = dict(credentials.data)
         credential_data.update(new_credential_fields)
+
+        postlogout_url = conf.get(CONF_POST_LOGOUT_URL) or base_url
+
         self._store_logout_metadata(
             credential_data,
             token_data,
             params,
-            base_url,
+            postlogout_url,
         )
 
         user: User | None = await self.hass.auth.async_get_user_by_credentials(
