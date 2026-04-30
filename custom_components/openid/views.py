@@ -130,7 +130,6 @@ class OpenIDAuthorizeView(HomeAssistantView):
         conf: dict[str, str] = self.hass.data[DOMAIN]
 
         params = request.rel_url.query
-        activated = params.get("_activated") == "1"
 
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
