@@ -2,6 +2,8 @@ const LOGOUT_SESSION_ENDPOINT = "/auth/openid/session";
 let sessionLoaded = false;
 let sessionData = null;
 
+
+
 const loadLogoutSession = async (hass) => {
   if (sessionLoaded) {
     console.log("hass-openid: using cached session metadata");
@@ -118,7 +120,6 @@ const revokeFrontendAuth = async (hass) => {
 };
 
 let handlingLogout = false;
-
 const performLogout = async (hass, redirectUrl) => {
   console.log("hass-openid: performing logout, redirect to:", redirectUrl);
 
@@ -143,39 +144,43 @@ const performLogout = async (hass, redirectUrl) => {
 
 window.addEventListener(
   "hass-logout",
-  (event) => {
-    if (handlingLogout) {
-      console.log("hass-openid: already handling logout, ignoring duplicate event");
-      return;
-    }
-
-    console.log("hass-openid: intercepting logout event");
-    handlingLogout = true;
+  async (event) => {
     event.stopImmediatePropagation();
     event.preventDefault();
-
-    const finish = async () => {
-      const app = document.querySelector("home-assistant");
-      const hass = app?.hass;
-
-      // Load session metadata BEFORE revoking auth
-      console.log("hass-openid: loading logout session metadata");
-      const metadata = await loadLogoutSession(hass);
-
-      let redirectUrl = buildLogoutUrl(metadata);
-
-      if (!redirectUrl) {
-        console.warn("hass-openid: no logout URL configured, redirecting to /");
-        redirectUrl = "/";
-      }
-
-      console.log("hass-openid: will redirect to:", redirectUrl);
-      await performLogout(hass, redirectUrl);
-    };
-
-    void finish().finally(() => {
-      handlingLogout = false;
-    });
+    console.log("Logout started and overwritten");
+    window.logoutStarted = true;
   },
   { capture: true }
 );
+
+
+window.addEventListener("closed",
+  (event) => {
+
+    if(window.logoutStarted) {
+      if (handlingLogout) {
+        console.log("hass-openid: already handling logout, ignoring duplicate event");
+        return;
+      }
+
+      handlingLogout = true;
+      const finish = async () => {
+        const app = document.querySelector("home-assistant");
+        const hass = app?.hass;
+
+        console.log("hass-openid: getting preloaded logout session metadata");
+        //const metadata = sessionData
+        const metadata = await loadLogoutSession(hass);
+        let redirectUrl = buildLogoutUrl(metadata);
+
+        if (!redirectUrl) {
+          console.warn("hass-openid: no logout URL configured, redirecting to /");
+          redirectUrl = "/";
+        }
+        await performLogout(hass, redirectUrl);
+      }
+      finish().finally(() => {
+         handlingLogout = false;
+      });
+    }
+  }); 

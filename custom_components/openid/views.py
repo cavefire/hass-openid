@@ -15,6 +15,8 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from aiohttp.web import Request, Response
+from aiohttp import ClientSession
+
 from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
@@ -32,6 +34,7 @@ from .const import (
     CONF_BLOCK_LOGIN,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
+    CONF_POST_LOGOUT_URL,
     CONF_LOGOUT_URL,
     CONF_SCOPE,
     CONF_TOKEN_URL,
@@ -127,6 +130,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
         conf: dict[str, str] = self.hass.data[DOMAIN]
 
         params = request.rel_url.query
+
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
 
@@ -237,7 +241,7 @@ class OpenIDAuthorizeView(HomeAssistantView):
             cancel_url=params.get("base_url", "/"),
         )
         return Response(status=HTTPStatus.OK, body=html, content_type="text/html")
-
+        
 
 class OpenIDConsentView(HomeAssistantView):
     """Handle consent form submission."""
@@ -485,11 +489,14 @@ class OpenIDCallbackView(HomeAssistantView):
 
         credential_data = dict(credentials.data)
         credential_data.update(new_credential_fields)
+
+        postlogout_url = conf.get(CONF_POST_LOGOUT_URL) or base_url
+
         self._store_logout_metadata(
             credential_data,
             token_data,
             params,
-            base_url,
+            postlogout_url,
         )
 
         user: User | None = await self.hass.auth.async_get_user_by_credentials(
@@ -660,7 +667,7 @@ class OpenIDCallbackView(HomeAssistantView):
         credential_data: dict[str, Any],
         token_data: dict[str, Any] | None,
         params: Mapping[str, Any],
-        base_url: str | None,
+        postlogout_redirect_url: str | None,
     ) -> None:
         """Persist logout-related metadata for future IdP notifications."""
 
@@ -672,8 +679,8 @@ class OpenIDCallbackView(HomeAssistantView):
         elif token_data and (session_state := token_data.get("session_state")):
             credential_data[CRED_SESSION_STATE] = session_state
 
-        if base_url:
-            credential_data[CRED_LOGOUT_REDIRECT_URI] = base_url
+        if postlogout_redirect_url:
+            credential_data[CRED_LOGOUT_REDIRECT_URI] = postlogout_redirect_url
 
     async def _ensure_person_for_user(
         self, user: User, credential_data: dict[str, Any]
@@ -739,7 +746,6 @@ class OpenIDCallbackView(HomeAssistantView):
                     return candidate
 
         return None
-
 
 class OpenIDSessionView(HomeAssistantView):
     """Expose logout metadata for the active user session."""
@@ -860,7 +866,6 @@ class OpenIDAndroidStatusView(HomeAssistantView):
             content_type="application/json",
         )
 
-
 def _show_error(
     hass: HomeAssistant,
     params: Mapping[str, str],
@@ -887,7 +892,7 @@ def _show_error(
             redirect_url=safe_redirect_url,
         )
 
-        return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+    return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
 
 
 def _android_waiting_response(

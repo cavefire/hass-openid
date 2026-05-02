@@ -44,8 +44,17 @@ function redirect_openid_login() {
   const urlParams = new URLSearchParams(window.location.search);
   const rawClientId = urlParams.get('client_id');
   const isAndroidClient = rawClientId === 'https://home-assistant.io/android';
+  const rawRedirectUri = urlParams.get('redirect_uri');
+  let state = urlParams.get('state');
+
+  if (!rawClientId || !rawRedirectUri) {
+    console.warn('OpenID redirect skipped: missing client_id or redirect_uri');
+    return;
+  }
+
   const clientId = encodeURIComponent(rawClientId);
-  const redirectUri = encodeURIComponent(urlParams.get('redirect_uri'));
+  const redirectUri = encodeURIComponent(rawRedirectUri);
+
   const referrerState = (() => {
     try {
       const ref = document.referrer ? new URL(document.referrer) : null;
@@ -55,7 +64,7 @@ function redirect_openid_login() {
     }
   })();
 
-  let state = urlParams.get('state') || referrerState || localStorage.getItem('openid_original_state');
+  state = state || referrerState || localStorage.getItem('openid_original_state');
 
   if (isAndroidClient && !state) {
     state = generateOpenIdState();

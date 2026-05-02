@@ -15,6 +15,7 @@ CONF_SCOPE = "scope"
 
 CONF_CREATE_USER = "create_user"
 CONF_BLOCK_LOGIN = "block_login"
+CONF_POST_LOGOUT_URL = "post_logout_url"
 CONF_ERROR_URL = "error_url"
 CONF_VALIDATE_TLS = "validate_tls"
 CONF_USE_HEADER_AUTH = "use_auth_header"

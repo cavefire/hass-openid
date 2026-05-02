@@ -29,6 +29,7 @@ from .config_helpers import (
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_POST_LOGOUT_URL,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
@@ -83,6 +84,7 @@ CONFIG_SCHEMA = vol.Schema(
                     CONF_USE_HEADER_AUTH, default=DEFAULT_USE_HEADER_AUTH
                 ): cv.boolean,
                 vol.Optional(CONF_USE_PKCE): cv.boolean,
+                vol.Optional(CONF_POST_LOGOUT_URL): cv.url,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
