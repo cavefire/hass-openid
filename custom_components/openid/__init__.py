@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ from .const import (
     CONF_BLOCK_LOGIN,
     CONF_POST_LOGOUT_URL,
     CONF_TRUSTED_CLIENT_IDS,
+    CONF_TRUSTED_CLIENT_PATTERN,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
@@ -89,6 +91,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_TRUSTED_CLIENT_IDS, default=[]): vol.All(
                     cv.ensure_list, [cv.string]
                 ),
+                vol.Optional(CONF_TRUSTED_CLIENT_PATTERN): cv.string,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
@@ -190,6 +193,12 @@ async def _async_prepare_config(
 
     if CONF_USE_PKCE not in config:
         config[CONF_USE_PKCE] = bool(discovered[DISCOVERY_PKCE_AVAILABLE])
+
+    # compile regex pattern if it exists
+    if CONF_TRUSTED_CLIENT_PATTERN in config:
+        pattern_str = config[CONF_TRUSTED_CLIENT_PATTERN]
+        pattern = re.compile(pattern_str)
+        config[CONF_TRUSTED_CLIENT_PATTERN] = pattern
 
     return config
 

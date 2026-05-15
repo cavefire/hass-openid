@@ -83,6 +83,15 @@ openid:
     - "https://internal-app"
   ...
 ```
+There is also a regex pattern support for trusted client ids via the `trusted_client_pattern`. Can be used with
+`trusted_client_ids` or separately.
+```yaml
+openid:
+  ...
+  block_login: true
+  trusted_client_pattern: "https://.*internal.com"
+  ...
+```
 
 Make sure OpenID login works before enabling `block_login`, otherwise you can lock yourself out.
 

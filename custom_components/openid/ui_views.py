@@ -35,6 +35,7 @@ from .const import (
     CONF_LOGOUT_URL,
     CONF_POST_LOGOUT_URL,
     CONF_TRUSTED_CLIENT_IDS,
+    CONF_TRUSTED_CLIENT_PATTERN,
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USE_HEADER_AUTH,
@@ -109,10 +110,14 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
 
         trusted_clients = conf.get(CONF_TRUSTED_CLIENT_IDS,[])
 
+        trusted_clients_pattern = conf.get(CONF_TRUSTED_CLIENT_PATTERN, None)
+
         if client_id in trusted_clients:
             _LOGGER.debug(
                 f"Client id({client_id}) is trusted skipping consent screen."
             )
+            return False
+        elif trusted_clients_pattern and trusted_clients_pattern.match(client_id):
             return False
 
         internal_url = None
