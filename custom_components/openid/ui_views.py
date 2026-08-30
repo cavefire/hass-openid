@@ -10,6 +10,7 @@ from http import HTTPStatus
 import json
 import logging
 import secrets
+import re
 from string import Template
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -34,6 +35,8 @@ from .const import (
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
     CONF_POST_LOGOUT_URL,
+    CONF_TRUSTED_CLIENT_IDS,
+    CONF_TRUSTED_CLIENT_PATTERN,
     CONF_SCOPE,
     CONF_TOKEN_URL,
     CONF_USE_HEADER_AUTH,
@@ -46,6 +49,7 @@ from .const import (
     DOMAIN,
 )
 from .oauth_helper import exchange_code_for_token, fetch_user_info
+from .http_helper import is_speculative_request,show_prerender
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +108,21 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
             return False
 
         client_id = params.get("client_id")
+
+        trusted_clients = conf.get(CONF_TRUSTED_CLIENT_IDS,[])
+
+        trusted_clients_pattern_str = conf.get(CONF_TRUSTED_CLIENT_PATTERN, None)
+        if trusted_clients_pattern_str != None:
+          trusted_clients_pattern = re.compile(trusted_clients_pattern_str) 
+
+        if client_id in trusted_clients:
+            _LOGGER.debug(
+                f"Client id({client_id}) is trusted skipping consent screen."
+            )
+            return False
+        elif trusted_clients_pattern and trusted_clients_pattern.match(client_id):
+            return False
+
         internal_url = None
         external_url = None
         cloud_url = None
@@ -148,6 +167,8 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
             )
 
         params = request.rel_url.query
+        activated = params.get("_activated") == "1"
+
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
 
@@ -156,6 +177,9 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
                 "Showing consent screen for client_id: %s", params.get("client_id")
             )
             return await self._show_consent_screen(request, params)
+        elif is_speculative_request(request) and not activated:
+            current_url = str(request.url)
+            return show_prerender(self.hass, current_url)
 
         client_id = params.get("client_id")
         client_state = params.get("client_state") or params.get("state")
@@ -672,3 +696,7 @@ def _show_error(
     )
 
     return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+
+
+
+

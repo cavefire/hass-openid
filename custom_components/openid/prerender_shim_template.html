@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Loading</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #0f1722;
+      color: #d7e3f4;
+      font-family: system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+  <div>Opening sign-in</div>
+  <script>
+    const target = "$current_url";
+    const restart = () => {
+      const url = new URL(target);
+      url.searchParams.set("_activated", "1");
+      window.location.replace(url.toString());
+    };
+
+    // If already visible and not prerendering, continue immediately.
+    if (!document.prerendering && document.visibilityState === "visible") {
+      restart();
+    } else {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") restart();
+      }, { once: true });
+
+      if ("onprerenderingchange" in document) {
+        document.addEventListener("prerenderingchange", restart, { once: true });
+      }
+    }
+  </script>
+</body>
+</html>

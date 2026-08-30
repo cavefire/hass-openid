@@ -31,6 +31,8 @@ from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
     CONF_POST_LOGOUT_URL,
+    CONF_TRUSTED_CLIENT_IDS,
+    CONF_TRUSTED_CLIENT_PATTERN,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
@@ -86,6 +88,10 @@ CONFIG_SCHEMA = vol.Schema(
                 ): cv.boolean,
                 vol.Optional(CONF_USE_PKCE): cv.boolean,
                 vol.Optional(CONF_POST_LOGOUT_URL): cv.url,
+                vol.Optional(CONF_TRUSTED_CLIENT_IDS, default=[]): vol.All(
+                    cv.ensure_list, [cv.string]
+                ),
+                vol.Optional(CONF_TRUSTED_CLIENT_PATTERN): cv.string,
                 vol.Optional(
                     CONF_OPENID_TEXT, default="OpenID / OAuth2 Authentication"
                 ): cv.string,
@@ -274,6 +280,12 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
     domain_data["consent_template"] = await asyncio.to_thread(
         consent_path.read_text, encoding="utf-8"
     )
+
+    prerender_shim_path = Path(__file__).parent / "prerender_shim_template.html"
+    domain_data["prerender_shim_template"] = await asyncio.to_thread(
+        prerender_shim_path.read_text, encoding="utf-8"
+    )
+    
 
     error_path = Path(__file__).parent / "error_template.html"
     domain_data["error_template"] = await asyncio.to_thread(

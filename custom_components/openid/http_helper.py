@@ -8,13 +8,14 @@ import logging
 from pathlib import Path
 import secrets
 from urllib.parse import urlencode
+from string import Template
 
 from aiohttp.web import FileResponse, Request, Response
 
 from homeassistant.core import HomeAssistant
 
 from .config_helpers import get_active_config
-from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS
+from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,6 +125,13 @@ def override_authorize_route(hass: HomeAssistant) -> None:
 
         is_trusted = _is_trusted_request(request, config)
         should_block = config.get(CONF_BLOCK_LOGIN, False) and not is_trusted
+
+        if should_block and is_speculative_request(request) and request.query.get("_activated") != "1":
+            # We return a tiny shim of a page that waits to be visible and solves browser doing prefetch/prerender calls
+            # This prevents bookmarks to home-assistant from hanging due to a prerender call.
+            # The page waits for it to be visible then replaces url to the actived url starting oauth signin.
+            current_url = str(request.url)
+            return show_prerender(hass,current_url)
 
         if not should_block:
             response = await _original_get_function(request)
@@ -240,3 +248,46 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             resource._routes = {"GET": get_handler}  # noqa: SLF001
             _LOGGER.debug("Overrode /auth/authorize route – custom JS injected")
             break
+
+def is_speculative_request(request):
+    sec_purpose = request.headers.get("Sec-Purpose", "").lower()
+
+    purpose = request.headers.get("Purpose", "").lower()  # legacy fallback
+
+    if ( "prefetch" in sec_purpose or "prerender" in sec_purpose or "prefetch" in purpose):
+        _LOGGER.debug(
+            "override_authorize - This is a speculative request. "
+            "Sec-Purpose=%s Purpose=%s URL=%s",
+            request.headers.get("Sec-Purpose"),
+            request.headers.get("Purpose"),
+            request.url,
+        )
+        return True
+
+    return  False
+
+def show_prerender(
+    hass: HomeAssistant,
+    current_url: str,
+) -> Response:
+    # make sure the alert_type and alert_message can be safely displayed
+    conf: dict[str, Any] | None = hass.data.get(DOMAIN)
+    safe_current_url = current_url.replace("'", "%27").replace('"', "%22")
+
+    template_content = hass.data[DOMAIN]["prerender_shim_template"]
+    template = Template(template_content)
+    html = template.substitute(
+        current_url=safe_current_url
+    )
+
+    return Response(
+        status=HTTPStatus.OK,
+        content_type="text/html",
+        text=html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Vary": "Sec-Purpose, Purpose",
+        },
+    )

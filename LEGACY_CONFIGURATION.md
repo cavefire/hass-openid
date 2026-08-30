@@ -70,6 +70,29 @@ openid:
   ...
 ```
 
+To allow specific client ids to always skip consent screen, add them to `trusted_client_ids`.
+(Only valid when `block_login` is true).
+CAUTION This is should only used for trusted client ids (in the form of a url for home-assistant oauth):
+
+```yaml
+openid:
+  ...
+  block_login: true
+  trusted_client_ids:
+    - "https://my-home-assistant.com"
+    - "https://internal-app"
+  ...
+```
+There is also a regex pattern support for trusted client ids via the `trusted_client_pattern`. Can be used with
+`trusted_client_ids` or separately.
+```yaml
+openid:
+  ...
+  block_login: true
+  trusted_client_pattern: "https://.*internal.com"
+  ...
+```
+
 Make sure OpenID login works before enabling `block_login`, otherwise you can lock yourself out.
 
 ## PKCE (Proof Key for Code Exchange)
