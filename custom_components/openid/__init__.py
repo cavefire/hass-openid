@@ -16,6 +16,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -105,22 +106,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     yaml_config = config.get(DOMAIN)
     if yaml_config:
+        import_data: dict[str, Any]
         try:
             prepared_yaml_config = await _async_prepare_config(hass, dict(yaml_config))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Failed to prepare YAML OpenID configuration: %s; "
+                "deferring discovery to config entry setup",
+                err,
+            )
+            import_data = dict(yaml_config)
+        else:
             hass.data[DOMAIN][DATA_YAML_IMPORT_CONFIG] = prepared_yaml_config
             set_active_config(
                 hass,
                 prepared_yaml_config,
             )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.error("Failed to prepare YAML OpenID configuration: %s", err)
-            return False
+            import_data = prepared_yaml_config
 
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN,
                 context={"source": SOURCE_IMPORT},
-                data=prepared_yaml_config,
+                data=import_data,
             )
         )
 
@@ -134,7 +142,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if yaml_config := hass.data[DOMAIN].get(DATA_YAML_IMPORT_CONFIG):
         runtime_config = dict(yaml_config)
     else:
-        runtime_config = await _async_prepare_config(hass, runtime_config)
+        try:
+            runtime_config = await _async_prepare_config(hass, runtime_config)
+        except Exception as err:  # noqa: BLE001
+            raise ConfigEntryNotReady(
+                f"Failed to prepare OpenID configuration: {err}"
+            ) from err
     set_active_config(hass, runtime_config)
     hass.data[DOMAIN][DATA_ACTIVE_ENTRY_ID] = entry.entry_id
     return True
