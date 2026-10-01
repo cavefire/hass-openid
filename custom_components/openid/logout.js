@@ -93,9 +93,19 @@ const buildLogoutUrl = (metadata) => {
   return target.toString();
 };
 
+// Only remove session related keys. Everything else (browser settings like
+// the theme, data stored by other integrations or cards) must survive logging
+// out and back in.
+const SESSION_STORAGE_KEYS = [
+  "hassTokens",
+  "openid_original_state",
+];
+
 const clearFrontendState = () => {
   try {
-    window.localStorage.clear();
+    SESSION_STORAGE_KEYS.forEach((key) => {
+      window.localStorage.removeItem(key);
+    });
   } catch (err) {
     console.warn("hass-openid: unable to clear local storage", err);
   }
