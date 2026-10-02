@@ -200,6 +200,16 @@ async def _async_prepare_config(
         if key not in config and discovered.get(key):
             config[key] = discovered[key]
 
+    if missing := [
+        key
+        for key in (CONF_AUTHORIZE_URL, CONF_TOKEN_URL, CONF_USER_INFO_URL)
+        if not config.get(key)
+    ]:
+        raise RuntimeError(
+            f"OpenID discovery at {config[CONF_CONFIGURE_URL]} did not provide "
+            f"{', '.join(missing)}; configure them manually"
+        )
+
     if CONF_LOGOUT_URL not in config and discovered.get(CONF_LOGOUT_URL):
         config[CONF_LOGOUT_URL] = discovered[CONF_LOGOUT_URL]
 
