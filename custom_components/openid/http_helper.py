@@ -1,6 +1,7 @@
 """Patch the built-in /auth/authorize and /auth/login_flow pages to load our JS helper."""
 
 import base64
+from contextlib import suppress
 from http import HTTPStatus
 from ipaddress import IPv4Address, IPv6Address, ip_address
 import json
@@ -11,8 +12,10 @@ from urllib.parse import urlencode
 from string import Template
 
 from aiohttp.web import FileResponse, Request, Response
+from yarl import URL
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 
 from .config_helpers import get_active_config
 from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS, DOMAIN
@@ -59,6 +62,27 @@ def _is_trusted_request(request: Request, config: dict) -> bool:
         return False
 
     return any(ip_obj in network for network in config.get(CONF_TRUSTED_IPS, []))
+
+
+def _get_request_base_url(hass: HomeAssistant, request: Request) -> str:
+    """Return the base URL the client used to reach Home Assistant.
+
+    Behind a TLS-terminating reverse proxy the request scheme is often http,
+    which produces a redirect_uri that does not match the one registered at
+    the IdP. Prefer a configured URL with the same host, as it carries the
+    scheme and port the client actually used.
+    """
+    request_url = URL(f"{request.scheme}://{request.host}")
+
+    configured_urls = [hass.config.external_url, hass.config.internal_url]
+    with suppress(NoURLAvailableError):
+        configured_urls.append(get_url(hass, require_cloud=True))
+
+    for configured_url in configured_urls:
+        if configured_url and (url := URL(configured_url)).host == request_url.host:
+            return str(url.origin())
+
+    return str(request_url.origin())
 
 
 def override_authorize_login_flow(hass: HomeAssistant) -> None:
@@ -154,7 +178,7 @@ def override_authorize_route(hass: HomeAssistant) -> None:
             params,
         )
 
-        base_url = f"{request.scheme}://{request.host}"
+        base_url = _get_request_base_url(hass, request)
         params["base_url"] = base_url
 
         if "state" in params:
