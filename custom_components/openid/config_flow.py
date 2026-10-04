@@ -24,12 +24,13 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
-from .config_helpers import async_discover_configuration
+from .config_helpers import async_discover_configuration, parse_custom_auth_params
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
+    CONF_CUSTOM_AUTH_PARAMS,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
     CONF_OPENID_TEXT,
@@ -57,6 +58,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 CONF_TRUSTED_IPS_INPUT = "trusted_ips_input"
+CONF_CUSTOM_AUTH_PARAMS_INPUT = "custom_auth_params_input"
 
 TLS_DISCOVERY_EXCEPTIONS = (
     ClientConnectorCertificateError,
@@ -86,6 +88,11 @@ def _password_selector() -> TextSelector:
 def _trusted_ips_to_text(trusted_ips: list[str]) -> str:
     """Convert trusted IP list into multiline text."""
     return "\n".join(trusted_ips)
+
+
+def _custom_auth_params_to_text(params: dict[str, str]) -> str:
+    """Convert custom authorize parameters into multiline key=value text."""
+    return "\n".join(f"{key}={value}" for key, value in params.items())
 
 
 def _parse_trusted_ips(raw_value: str | None) -> list[str]:
@@ -409,7 +416,15 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                 trusted_ips = _parse_trusted_ips(user_input.get(CONF_TRUSTED_IPS_INPUT))
             except ValueError:
                 errors[CONF_TRUSTED_IPS_INPUT] = "invalid_cidr"
-            else:
+
+            try:
+                custom_auth_params = parse_custom_auth_params(
+                    user_input.get(CONF_CUSTOM_AUTH_PARAMS_INPUT)
+                )
+            except ValueError:
+                errors[CONF_CUSTOM_AUTH_PARAMS_INPUT] = "invalid_custom_auth_params"
+
+            if not errors:
                 self._config_data.update(
                     {
                         CONF_BLOCK_LOGIN: user_input[CONF_BLOCK_LOGIN],
@@ -417,6 +432,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_OPENID_TEXT: user_input[CONF_OPENID_TEXT].strip(),
                         CONF_CREATE_USER: user_input[CONF_CREATE_USER],
                         CONF_USE_HEADER_AUTH: user_input[CONF_USE_HEADER_AUTH],
+                        CONF_CUSTOM_AUTH_PARAMS: custom_auth_params,
                     }
                 )
 
@@ -451,6 +467,9 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_USE_HEADER_AUTH, DEFAULT_USE_HEADER_AUTH
             ),
             CONF_ERROR_URL: self._config_data.get(CONF_ERROR_URL, ""),
+            CONF_CUSTOM_AUTH_PARAMS_INPUT: _custom_auth_params_to_text(
+                self._config_data.get(CONF_CUSTOM_AUTH_PARAMS, {})
+            ),
         }
 
         return self.async_show_form(
@@ -466,6 +485,9 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                         vol.Required(CONF_CREATE_USER): BooleanSelector(),
                         vol.Required(CONF_USE_HEADER_AUTH): BooleanSelector(),
                         vol.Optional(CONF_ERROR_URL): _url_selector(),
+                        vol.Optional(CONF_CUSTOM_AUTH_PARAMS_INPUT): _text_selector(
+                            multiline=True
+                        ),
                     }
                 ),
                 suggested_values,

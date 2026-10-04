@@ -10,7 +10,8 @@
       "invalid_cidr": "Gib pro Zeile einen gultigen CIDR-Block ein",
       "invalid_discovery": "Der Discovery-Endpunkt hat die erforderlichen OpenID-Endpunkte nicht geliefert",
       "invalid_ssl_certificate": "Die TLS-Zertifikatsprüfung beim Verbinden mit dem Provider ist fehlgeschlagen",
-      "required_fields": "Prufe die gefundenen Endpunkte und erganze fehlende Werte"
+      "required_fields": "Prufe die gefundenen Endpunkte und erganze fehlende Werte",
+      "invalid_custom_auth_params": "Gib pro Zeile ein key=value-Paar ein"
     },
     "step": {
       "advanced": {
@@ -20,7 +21,8 @@
           "error_url": "Benutzerdefinierte Fehler-Weiterleitungs-URL",
           "openid_text": "Text der Anmeldeschaltflache",
           "trusted_ips_input": "Vertrauenswurdige IPv4-/IPv6-CIDR-Blöcke",
-          "use_auth_header": "HTTP-Basic-Authentifizierung fur den Token-Request verwenden"
+          "use_auth_header": "HTTP-Basic-Authentifizierung fur den Token-Request verwenden",
+          "custom_auth_params_input": "Zusätzliche Autorisierungsparameter"
         },
         "data_description": {
           "block_login": "Erlaube nur die OpenID-Anmeldung, es sei denn, die Client-IP entspricht einem der vertrauenswurdigen IPv4- oder IPv6-CIDR-Blöcke unten",
@@ -28,7 +30,8 @@
           "error_url": "Optionale URL, zu der statt der integrierten OpenID-Fehlerseite umgeleitet wird",
           "openid_text": "Text, der auf der Home-Assistant-Anmeldeseite angezeigt wird",
           "trusted_ips_input": "Gib pro Zeile einen IPv4- oder IPv6-CIDR-Block ein",
-          "use_auth_header": "Sende Client-ID und Secret im Authorization-Header beim Austausch des Codes gegen Tokens"
+          "use_auth_header": "Sende Client-ID und Secret im Authorization-Header beim Austausch des Codes gegen Tokens",
+          "custom_auth_params_input": "Optionale zusätzliche Parameter für die Autorisierungsanfrage beim Anbieter, ein key=value pro Zeile (zum Beispiel hd=example.com)"
         },
         "description": "Konfiguriere das verbleibende Anmeldeverhalten und die Standardwerte."
       },

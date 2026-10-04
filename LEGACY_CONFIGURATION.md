@@ -110,6 +110,25 @@ openid:
   ...
 ```
 
+## Custom Authorize Parameters
+
+Some providers support additional parameters on the authorization request, for example Google's `hd` (hosted domain).
+Add them with `custom_auth_params`, either as a mapping or as a list of `key=value` strings.
+Parameters set by the integration itself (such as `client_id` or `redirect_uri`) cannot be overridden.
+
+```yaml
+openid:
+  ...
+  custom_auth_params:
+    hd: "example.com"
+    prompt: "select_account"
+  # or
+  # custom_auth_params:
+  #   - "hd=example.com"
+  #   - "prompt=select_account"
+  ...
+```
+
 ## Alternative Provider Endpoint Configuration
 
 If your IdP does not provide `configure_url`, specify endpoints manually:

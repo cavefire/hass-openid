@@ -50,6 +50,7 @@ from .const import (
     CRED_SESSION_STATE,
     DOMAIN,
 )
+from .config_helpers import add_custom_auth_params
 from .oauth_helper import exchange_code_for_token, fetch_user_info
 from .http_helper import is_speculative_request,show_prerender
 
@@ -216,6 +217,8 @@ class OpenIDAuthorizeView(HomeAssistantView):
             query["code_challenge_method"] = "S256"
             _LOGGER.debug("PKCE enabled; code_challenge added to authorize request")
 
+        add_custom_auth_params(query, conf)
+
         self.hass.data["_openid_state"][state] = stored_params
         _LOGGER.debug("Storing params under state %s: %s", state, stored_params)
 
@@ -350,6 +353,8 @@ class OpenIDConsentView(HomeAssistantView):
             _LOGGER.debug(
                 "PKCE enabled; code_challenge added to consent authorize request"
             )
+
+        add_custom_auth_params(query, conf)
 
         self.hass.data["_openid_state"][state] = original_params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))
