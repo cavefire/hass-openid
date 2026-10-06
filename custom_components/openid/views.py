@@ -711,14 +711,15 @@ class OpenIDCallbackView(HomeAssistantView):
         self, user: User, credential_data: dict[str, Any]
     ) -> None:
         """Create a person entry for the user if needed."""
-        if PERSON_DOMAIN not in self.hass.data:
+        if PERSON_DOMAIN not in self.hass.config.components:
             _LOGGER.debug("Person component not loaded; skipping person creation")
             return
 
-        _, storage_collection, _ = self.hass.data[PERSON_DOMAIN]
-        items = storage_collection.async_items()
+        # Only use the public person state attributes; the person integration's
+        # hass.data layout is private and changes between releases.
+        persons = self.hass.states.async_all(PERSON_DOMAIN)
 
-        if any(item.get("user_id") == user.id for item in items):
+        if any(state.attributes.get("user_id") == user.id for state in persons):
             return
 
         candidate_name = (
@@ -730,22 +731,23 @@ class OpenIDCallbackView(HomeAssistantView):
 
         if candidate_name:
             slug_candidate = slugify(candidate_name)
-            for item in items:
-                item_name = item.get("name")
-                item_id = item.get("id")
+            for state in persons:
+                person_name = state.name
+                person_id = state.attributes.get("id")
                 if (
-                    isinstance(item_name, str)
-                    and item_name.lower() == candidate_name.lower()
+                    isinstance(person_name, str)
+                    and person_name.lower() == candidate_name.lower()
                 ) or (
                     slug_candidate
-                    and isinstance(item_id, str)
-                    and item_id == slug_candidate
+                    and isinstance(person_id, str)
+                    and person_id == slug_candidate
                 ):
-                    if item.get("user_id") != user.id:
-                        await storage_collection.async_update_item(
-                            item["id"],
-                            {"user_id": user.id},
-                        )
+                    _LOGGER.info(
+                        "Person %s already exists for user %s; link it manually "
+                        "under Settings > People",
+                        state.entity_id,
+                        user.id,
+                    )
                     return
 
         person_name = candidate_name or user.id
