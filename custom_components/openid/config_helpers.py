@@ -7,6 +7,8 @@ from ipaddress import IPv4Network, IPv6Network, ip_network
 import logging
 from typing import Any
 
+from aiohttp import ClientSession
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import aiohttp_client
 
@@ -18,6 +20,7 @@ from .const import (
     CONF_USER_INFO_URL,
     CONF_VALIDATE_TLS,
     DATA_ACTIVE_CONFIG,
+    DATA_CLIENT_SESSIONS,
     DEFAULT_VALIDATE_TLS,
     DISCOVERY_PKCE_AVAILABLE,
     DOMAIN,
@@ -53,6 +56,25 @@ def set_active_config(
     return runtime_config
 
 
+def async_get_session(hass: HomeAssistant, validate_tls: bool) -> ClientSession:
+    """Return a client session for requests to the IdP.
+
+    Unlike the shared Home Assistant session, this one honours the
+    HTTP(S)_PROXY / NO_PROXY environment variables.
+    """
+    sessions: dict[bool, ClientSession] = get_domain_data(hass).setdefault(
+        DATA_CLIENT_SESSIONS, {}
+    )
+    session = sessions.get(validate_tls)
+    # Sessions created during config entry setup are detached on unload.
+    if session is None or session.closed:
+        session = aiohttp_client.async_create_clientsession(
+            hass, verify_ssl=validate_tls, trust_env=True
+        )
+        sessions[validate_tls] = session
+    return session
+
+
 def build_runtime_config(raw_config: dict[str, Any]) -> dict[str, Any]:
     """Normalize stored config for runtime use."""
     runtime_config = dict(raw_config)
@@ -81,7 +103,7 @@ async def async_discover_configuration(
     validate_tls: bool = DEFAULT_VALIDATE_TLS,
 ) -> dict[str, Any]:
     """Fetch OpenID endpoints from the discovery endpoint."""
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
+    session = async_get_session(hass, validate_tls)
 
     _LOGGER.debug("Fetching OpenID configuration from %s", configure_url)
     async with session.get(configure_url) as resp:

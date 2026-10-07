@@ -28,6 +28,7 @@ CONF_LOGOUT_URL = "logout_url"
 
 DATA_ACTIVE_CONFIG = "active_config"
 DATA_ACTIVE_ENTRY_ID = "active_entry_id"
+DATA_CLIENT_SESSIONS = "client_sessions"
 DATA_AUTH_PROVIDER = "auth_provider"
 DATA_SHARED_INITIALIZED = "shared_initialized"
 DATA_YAML_IMPORT_CONFIG = "yaml_import_config"

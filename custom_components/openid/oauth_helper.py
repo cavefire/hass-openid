@@ -6,9 +6,8 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import aiohttp_client
 
-from .config_helpers import get_active_config
+from .config_helpers import async_get_session, get_active_config
 from .const import CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +30,7 @@ async def exchange_code_for_token(
         config = get_active_config(hass) or {}
         validate_tls = bool(config.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS))
 
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
+    session = async_get_session(hass, validate_tls)
 
     data = {
         "grant_type": "authorization_code",
@@ -74,7 +73,7 @@ async def fetch_user_info(
         config = get_active_config(hass) or {}
         validate_tls = bool(config.get(CONF_VALIDATE_TLS, DEFAULT_VALIDATE_TLS))
 
-    session = aiohttp_client.async_get_clientsession(hass, verify_ssl=validate_tls)
+    session = async_get_session(hass, validate_tls)
     headers = {"Authorization": f"Bearer {access_token}"}
 
     _LOGGER.debug("Fetching user info from %s", user_info_url)
