@@ -563,6 +563,8 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
 
         self.hass.auth.async_update_user_credentials_data(credentials, credential_data)
 
+        await self._ensure_username_for_user(user, username)
+
         await self._ensure_person_for_user(user, credential_data)
 
         client_id = params.get("client_id")
