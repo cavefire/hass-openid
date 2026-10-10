@@ -10,7 +10,8 @@
       "invalid_cidr": "Enter one valid CIDR block per line",
       "invalid_discovery": "The discovery endpoint did not return the required OpenID endpoints",
       "invalid_ssl_certificate": "TLS certificate validation failed while connecting to the provider",
-      "required_fields": "Review the discovered endpoints and fill in any missing values"
+      "required_fields": "Review the discovered endpoints and fill in any missing values",
+      "invalid_custom_auth_params": "Enter one key=value pair per line"
     },
     "step": {
       "advanced": {
@@ -20,7 +21,8 @@
           "error_url": "Custom error redirect URL",
           "openid_text": "Login button text",
           "trusted_ips_input": "Trusted IPv4/IPv6 CIDR blocks",
-          "use_auth_header": "Use HTTP Basic auth for the token request"
+          "use_auth_header": "Use HTTP Basic auth for the token request",
+          "custom_auth_params_input": "Custom authorize parameters"
         },
         "data_description": {
           "block_login": "Only allow OpenID login unless the client IP matches one of the trusted IPv4 or IPv6 CIDR blocks below",
@@ -28,7 +30,8 @@
           "error_url": "Optional URL to redirect to instead of showing the built-in OpenID error page",
           "openid_text": "Text shown on the Home Assistant login page",
           "trusted_ips_input": "Enter one IPv4 or IPv6 CIDR block per line",
-          "use_auth_header": "Send the client ID and secret in the Authorization header when exchanging the code for tokens"
+          "use_auth_header": "Send the client ID and secret in the Authorization header when exchanging the code for tokens",
+          "custom_auth_params_input": "Optional extra parameters for the provider's authorization request, one key=value per line (for example hd=example.com)"
         },
         "description": "Configure the remaining login behavior and defaults."
       },

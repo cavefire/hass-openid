@@ -14,6 +14,7 @@ from homeassistant.helpers import aiohttp_client
 
 from .const import (
     CONF_AUTHORIZE_URL,
+    CONF_CUSTOM_AUTH_PARAMS,
     CONF_LOGOUT_URL,
     CONF_TOKEN_URL,
     CONF_TRUSTED_IPS,
@@ -95,6 +96,35 @@ def build_runtime_config(raw_config: dict[str, Any]) -> dict[str, Any]:
 
     runtime_config[CONF_TRUSTED_IPS] = trusted_networks
     return runtime_config
+
+
+def parse_custom_auth_params(raw_value: Any) -> dict[str, str]:
+    """Parse custom authorize parameters from a mapping or key=value lines."""
+    if not raw_value:
+        return {}
+
+    if isinstance(raw_value, dict):
+        return {str(key): str(value) for key, value in raw_value.items()}
+
+    if isinstance(raw_value, str):
+        raw_value = raw_value.splitlines()
+
+    params: dict[str, str] = {}
+    for line in raw_value:
+        candidate = str(line).strip()
+        if not candidate:
+            continue
+        key, separator, value = candidate.partition("=")
+        if not separator or not key.strip():
+            raise ValueError(f"Invalid authorize parameter '{candidate}'")
+        params[key.strip()] = value.strip()
+    return params
+
+
+def add_custom_auth_params(query: dict[str, str], config: dict[str, Any]) -> None:
+    """Add configured custom parameters without overriding the built-in ones."""
+    for key, value in config.get(CONF_CUSTOM_AUTH_PARAMS, {}).items():
+        query.setdefault(key, value)
 
 
 async def async_discover_configuration(

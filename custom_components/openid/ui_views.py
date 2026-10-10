@@ -27,7 +27,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 
 from . import views as base_views
-from .config_helpers import get_active_config
+from .config_helpers import add_custom_auth_params, get_active_config
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
@@ -234,6 +234,8 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
             query["code_challenge_method"] = "S256"
             _LOGGER.debug("PKCE enabled; code_challenge added to authorize request")
 
+        add_custom_auth_params(query, conf)
+
         self.hass.data["_openid_state"][state] = stored_params
         _LOGGER.debug("Storing params under state %s: %s", state, stored_params)
 
@@ -329,6 +331,8 @@ class OpenIDConsentView(BaseOpenIDConsentView):
             _LOGGER.debug(
                 "PKCE enabled; code_challenge added to consent authorize request"
             )
+
+        add_custom_auth_params(query, conf)
 
         self.hass.data["_openid_state"][state] = original_params
         _LOGGER.debug("Storing params under state %s: %s", state, dict(original_params))

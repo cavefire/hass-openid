@@ -25,11 +25,13 @@ from .auth_provider import async_register_auth_provider
 from .config_helpers import (
     async_discover_configuration,
     get_active_config,
+    parse_custom_auth_params,
     set_active_config,
 )
 from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
+    CONF_CUSTOM_AUTH_PARAMS,
     CONF_POST_LOGOUT_URL,
     CONF_TRUSTED_CLIENT_IDS,
     CONF_TRUSTED_CLIENT_PATTERN,
@@ -65,6 +67,15 @@ from .http_helper import override_authorize_login_flow, override_authorize_route
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _validate_auth_params(value: Any) -> dict[str, str]:
+    """Validate custom authorize parameters given as a mapping or key=value list."""
+    try:
+        return parse_custom_auth_params(value)
+    except ValueError as err:
+        raise vol.Invalid(str(err)) from err
+
+
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.Schema(
@@ -99,6 +110,7 @@ CONFIG_SCHEMA = vol.Schema(
                     cv.ensure_list, [cv.string]
                 ),
                 vol.Optional(CONF_LOGOUT_URL): cv.url,
+                vol.Optional(CONF_CUSTOM_AUTH_PARAMS, default={}): _validate_auth_params,
             }
         )
     },

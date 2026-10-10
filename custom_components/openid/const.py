@@ -25,6 +25,7 @@ CONF_USE_PKCE = "use_pkce"
 CONF_OPENID_TEXT = "openid_text"
 CONF_TRUSTED_IPS = "trusted_ips"
 CONF_LOGOUT_URL = "logout_url"
+CONF_CUSTOM_AUTH_PARAMS = "custom_auth_params"
 
 DATA_ACTIVE_CONFIG = "active_config"
 DATA_ACTIVE_ENTRY_ID = "active_entry_id"

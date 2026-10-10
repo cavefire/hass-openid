@@ -59,6 +59,7 @@ Keep your client ID and client secret ready before starting the integration flow
   - **Create Home Assistant users automatically**
   - **Use HTTP Basic auth for the token request**
   - **Custom error redirect URL** (optional)
+  - **Custom authorize parameters** (optional, one `key=value` per line, e.g. `hd=example.com` for Google)
 8. Finish the flow, sign out, and verify the **OpenID / OAuth2** button works on the login page.
 
 To change settings later, open the OpenID integration card and use **Reconfigure**.
