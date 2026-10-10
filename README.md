@@ -92,6 +92,7 @@ Your YAML config is imported into a config entry on startup and will create or u
 - If you enable **Block other login methods**, make sure OpenID login works first to avoid lockout.
 - Keep **Validate TLS certificate** enabled unless you explicitly need to connect to a trusted endpoint with a non-public certificate.
 - Users can be created automatically when **Create Home Assistant users automatically** is enabled.
+- Users that only sign in via OpenID are also given their username in the Home Assistant auth provider (with a random password nobody knows), so the username is shown under **Settings -> People -> Users**. Local login stays unusable unless an administrator sets a password for that user.
 - **Blocking a user in your authentication provider will not automatically block them in Home Assistant.** Users will still be able to access Home Assistant as long as their authentication remains valid. It is recommended to block users in Home Assistant as well, if needed.
 
 This integration is still in early stages of development and there can be issues as well as **security vulnerabilities**. Please use it at your own risk and report any issues you encounter.

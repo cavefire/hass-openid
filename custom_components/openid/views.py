@@ -22,6 +22,7 @@ from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.auth.models import User
+from homeassistant.auth.providers.homeassistant import HassAuthProvider, InvalidUser
 from homeassistant.components.auth import create_auth_code
 from homeassistant.components.http import KEY_HASS_USER, HomeAssistantView
 from homeassistant.components.person import DOMAIN as PERSON_DOMAIN, async_create_person
@@ -56,6 +57,7 @@ from .http_helper import is_speculative_request,show_prerender
 _LOGGER = logging.getLogger(__name__)
 
 _PKCE_VERIFIER_KEY = "pkce_code_verifier"
+HASS_PROVIDER_TYPE = "homeassistant"
 
 
 def _generate_pkce_pair() -> tuple[str, str]:
@@ -593,6 +595,8 @@ class OpenIDCallbackView(HomeAssistantView):
 
         self.hass.auth.async_update_user_credentials_data(credentials, credential_data)
 
+        await self._ensure_username_for_user(user, username)
+
         await self._ensure_person_for_user(user, credential_data)
 
         client_id = params.get("client_id")
@@ -754,6 +758,42 @@ class OpenIDCallbackView(HomeAssistantView):
             await async_create_person(self.hass, person_name, user_id=user.id)
         except ValueError as err:
             _LOGGER.warning("Unable to create person for user %s: %s", user.id, err)
+
+    async def _ensure_username_for_user(self, user: User, username: str) -> None:
+        """Make the username visible in Home Assistant's user management.
+
+        Home Assistant only shows usernames of credentials from its own auth
+        provider, so users that only sign in via OpenID had an empty username.
+        Register the username there with a random password nobody knows.
+        """
+        if any(
+            credential.auth_provider_type != DOMAIN for credential in user.credentials
+        ):
+            return
+
+        provider = self.hass.auth.get_auth_provider(HASS_PROVIDER_TYPE, None)
+        if not isinstance(provider, HassAuthProvider):
+            _LOGGER.debug("Home Assistant auth provider not enabled; skipping username")
+            return
+
+        normalized_username = username.strip().casefold()
+        try:
+            await provider.async_add_auth(
+                normalized_username, secrets.token_urlsafe(32)
+            )
+        except InvalidUser as err:
+            _LOGGER.warning(
+                "Unable to set username %s for user %s: %s",
+                normalized_username,
+                user.id,
+                err,
+            )
+            return
+
+        credentials = await provider.async_get_or_create_credentials(
+            {"username": normalized_username}
+        )
+        await self.hass.auth.async_link_user(user, credentials)
 
     async def _async_find_user_by_username(self, username: str) -> User | None:
         """Return existing user matching username if available."""
