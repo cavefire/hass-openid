@@ -111,6 +111,7 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
 
         trusted_clients = conf.get(CONF_TRUSTED_CLIENT_IDS,[])
 
+        trusted_clients_pattern = None
         trusted_clients_pattern_str = conf.get(CONF_TRUSTED_CLIENT_PATTERN, None)
         if trusted_clients_pattern_str != None:
           trusted_clients_pattern = re.compile(trusted_clients_pattern_str) 
@@ -120,7 +121,11 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
                 f"Client id({client_id}) is trusted skipping consent screen."
             )
             return False
-        elif trusted_clients_pattern and trusted_clients_pattern.match(client_id):
+        elif (
+            trusted_clients_pattern
+            and client_id is not None
+            and trusted_clients_pattern.match(client_id)
+        ):
             return False
 
         internal_url = None
