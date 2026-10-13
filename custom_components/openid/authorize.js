@@ -76,7 +76,12 @@ function redirect_openid_login() {
   const baseUrl = encodeURIComponent(window.location.origin);
   const stateParam = state ? `&state=${encodeURIComponent(state)}` : '';
   const clientStateParam = state ? `&client_state=${encodeURIComponent(state)}` : '';
-  const authUrl = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}${stateParam}${clientStateParam}`;
+  const codeChallenge = urlParams.get('code_challenge');
+  const codeChallengeMethod = urlParams.get('code_challenge_method');
+  const pkceParam = codeChallenge && codeChallengeMethod
+    ? `&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=${encodeURIComponent(codeChallengeMethod)}`
+    : '';
+  const authUrl = `/auth/openid/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&base_url=${baseUrl}${stateParam}${clientStateParam}${pkceParam}`;
 
   if (isAndroidClient && state) {
     startAndroidSsoPolling(state);

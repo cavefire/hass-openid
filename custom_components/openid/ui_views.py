@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from hashlib import sha256
 from http import HTTPStatus
+import inspect
 import json
 import logging
 import secrets
@@ -19,8 +20,8 @@ from aiohttp.web import Request, Response
 from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
-from homeassistant.auth.models import User
-from homeassistant.components.auth import create_auth_code
+from homeassistant.auth.models import Credentials, User
+from homeassistant.components.auth import DATA_STORE, create_auth_code
 from homeassistant.components.http import KEY_HASS_USER, HomeAssistantView
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
@@ -90,6 +91,33 @@ def _android_waiting_response(
 def _is_android_client(client_id: str | None) -> bool:
     """Return whether request is from the Home Assistant Android client."""
     return client_id == "https://home-assistant.io/android"
+
+
+def _create_auth_code(
+    hass: HomeAssistant,
+    client_id: str,
+    credentials: Credentials,
+    params: Mapping[str, str],
+) -> str:
+    """Create an auth code bound to the client's PKCE challenge, if it sent one.
+
+    Home Assistant 2026.10+ verifies the code_verifier at /auth/token and rejects
+    it when the code was stored without a challenge.
+    """
+    code_challenge = params.get("code_challenge")
+    store_result = hass.data[DATA_STORE]
+    if (
+        code_challenge
+        and params.get("code_challenge_method") == "S256"
+        and "code_challenge" in inspect.signature(store_result).parameters
+    ):
+        return store_result(
+            client_id,
+            credentials,
+            code_challenge=code_challenge,
+            code_challenge_method="S256",
+        )
+    return create_auth_code(hass, client_id, credentials)
 
 
 class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
@@ -591,7 +619,7 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
         )
 
         url = params.get("redirect_uri", "/")
-        result = create_auth_code(self.hass, client_id, credentials)
+        result = _create_auth_code(self.hass, client_id, credentials, params)
 
         _LOGGER.debug(
             "Created auth code %s for client_id=%s, credentials=%s",
