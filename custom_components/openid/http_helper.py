@@ -10,6 +10,7 @@ from pathlib import Path
 import secrets
 from urllib.parse import urlencode
 from string import Template
+from typing import Any
 
 from aiohttp.web import FileResponse, Request, Response
 from yarl import URL
