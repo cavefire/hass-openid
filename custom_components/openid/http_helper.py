@@ -163,8 +163,11 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                 path = response._path  # noqa: SLF001
                 try:
                     text = await hass.async_add_executor_job(_read_file_content, path)
+                    # Inject in <head>: the frontend bundle is loaded via dynamic
+                    # import() and can call /auth/login_flow before a script at
+                    # the end of <body> has run.
                     text = text.replace(
-                        "</body>", '<script src="/openid/authorize.js"></script></body>'
+                        "</head>", '<script src="/openid/authorize.js"></script></head>'
                     )
                     return Response(text=text, content_type="text/html")
                 except (OSError, UnicodeDecodeError):
