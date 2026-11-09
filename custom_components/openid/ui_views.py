@@ -20,7 +20,7 @@ from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.auth.models import User
-from homeassistant.components.auth import create_auth_code
+from homeassistant.components.auth import DATA_STORE
 from homeassistant.components.http import KEY_HASS_USER, HomeAssistantView
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
@@ -591,7 +591,18 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
         )
 
         url = params.get("redirect_uri", "/")
-        result = create_auth_code(self.hass, client_id, credentials)
+        store_result = self.hass.data[DATA_STORE]
+        code_challenge = params.get("code_challenge")
+        code_challenge_method = params.get("code_challenge_method")
+        if code_challenge:
+            result = store_result(
+                client_id,
+                credentials,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method or "S256",
+            )
+        else:
+            result = store_result(client_id, credentials)
 
         _LOGGER.debug(
             "Created auth code %s for client_id=%s, credentials=%s",
