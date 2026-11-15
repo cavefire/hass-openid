@@ -31,6 +31,7 @@ from .const import (
     CONF_CONFIGURE_URL,
     CONF_CREATE_USER,
     CONF_CUSTOM_AUTH_PARAMS,
+    CONF_DISPLAYNAME_FIELD,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
     CONF_OPENID_TEXT,
@@ -383,6 +384,11 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_USERNAME_FIELD: user_input[CONF_USERNAME_FIELD].strip(),
                 }
             )
+            displayname_field = user_input.get(CONF_DISPLAYNAME_FIELD, "").strip()
+            if displayname_field:
+                self._config_data[CONF_DISPLAYNAME_FIELD] = displayname_field
+            else:
+                self._config_data.pop(CONF_DISPLAYNAME_FIELD, None)
             return await self.async_step_advanced()
 
         suggested_values = user_input or {
@@ -390,6 +396,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_USERNAME_FIELD: self._config_data.get(
                 CONF_USERNAME_FIELD, DEFAULT_USERNAME_FIELD
             ),
+            CONF_DISPLAYNAME_FIELD: self._config_data.get(CONF_DISPLAYNAME_FIELD, ""),
         }
 
         return self.async_show_form(
@@ -399,6 +406,7 @@ class OpenIDConfigFlow(ConfigFlow, domain=DOMAIN):
                     {
                         vol.Required(CONF_SCOPE): _text_selector(),
                         vol.Required(CONF_USERNAME_FIELD): _text_selector(),
+                        vol.Optional(CONF_DISPLAYNAME_FIELD): _text_selector(),
                     }
                 ),
                 suggested_values,

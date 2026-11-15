@@ -60,13 +60,15 @@
       "identity": {
         "data": {
           "scope": "Angeforderter Scope",
-          "username_field": "Benutzername-Feld"
+          "username_field": "Benutzername-Feld",
+          "displayname_field": "Anzeigename-Feld"
         },
         "data_description": {
           "scope": "OAuth2/OpenID-Scope, der beim Provider angefordert wird",
-          "username_field": "Claim, der als Home-Assistant-Benutzername verwendet wird, zum Beispiel `preferred_username` oder `email`"
+          "username_field": "Claim, der als Home-Assistant-Benutzername verwendet wird, zum Beispiel `preferred_username` oder `email`",
+          "displayname_field": "Claim, der als Anzeigename neuer Benutzer verwendet wird, zum Beispiel `name` oder `given_name`. Leer lassen, um `name` und danach `preferred_username` zu verwenden"
         },
-        "description": "Lege fest, welche Claims angefordert werden und welches User-Info-Feld als Home-Assistant-Benutzername verwendet wird."
+        "description": "Lege fest, welche Claims angefordert werden und welche User-Info-Felder als Home-Assistant-Benutzername und Anzeigename verwendet werden."
       },
       "provider": {
         "data": {

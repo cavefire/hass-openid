@@ -44,6 +44,7 @@ from .const import (
     CONF_USE_PKCE,
     CONF_USER_INFO_URL,
     CONF_USERNAME_FIELD,
+    CONF_DISPLAYNAME_FIELD,
     CRED_ID_TOKEN,
     CRED_LOGOUT_REDIRECT_URI,
     CRED_SESSION_STATE,
@@ -118,6 +119,15 @@ def _create_auth_code(
             code_challenge_method="S256",
         )
     return create_auth_code(hass, client_id, credentials)
+
+
+def _display_name(user_info: Mapping[str, Any], displayname_field: str | None) -> Any:
+    """Return the display name claim, falling back to the standard claims."""
+    return (
+        (user_info.get(displayname_field) if displayname_field else None)
+        or user_info.get("name")
+        or user_info.get("preferred_username")
+    )
 
 
 class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
@@ -498,7 +508,7 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
             key: value
             for key, value in (
                 ("username", username),
-                ("name", user_info.get("name") or user_info.get("preferred_username")),
+                ("name", _display_name(user_info, conf.get(CONF_DISPLAYNAME_FIELD))),
                 ("email", user_info.get("email")),
                 ("subject", user_info.get("sub")),
                 ("preferred_username", user_info.get("preferred_username")),
