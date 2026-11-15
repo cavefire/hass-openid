@@ -11,6 +11,7 @@ CONF_USER_INFO_URL = "user_info_url"
 CONF_CONFIGURE_URL = "configure_url"
 
 CONF_USERNAME_FIELD = "username_field"
+CONF_DISPLAYNAME_FIELD = "displayname_field"
 CONF_SCOPE = "scope"
 
 CONF_CREATE_USER = "create_user"

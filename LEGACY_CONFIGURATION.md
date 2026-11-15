@@ -23,6 +23,7 @@ openid:
   configure_url: "https://YOUR_IDP_DOMAIN/.well-known/openid-configuration"
   validate_tls: true
   username_field: "preferred_username"
+  displayname_field: "name"
   scope: "openid profile email"
   block_login: false
   trusted_ips:
@@ -42,6 +43,7 @@ On startup, the integration imports this YAML config into a config entry.
 
 - `username_field` must match a claim in the user info response.
 - Common values are `preferred_username`, `email`, or `sub`.
+- `displayname_field` is optional and sets the claim used as the display name of new users. Without it, `name` is used, then `preferred_username`.
 - The value should match the Home Assistant username unless automatic user creation is enabled.
 - `validate_tls` defaults to `true` and controls certificate verification for discovery, token, and user info requests.
 - Set `validate_tls: false` only for trusted environments such as internal IdPs with self-signed certificates.

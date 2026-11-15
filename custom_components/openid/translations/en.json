@@ -60,13 +60,15 @@
       "identity": {
         "data": {
           "scope": "Requested scope",
-          "username_field": "Username field"
+          "username_field": "Username field",
+          "displayname_field": "Display name field"
         },
         "data_description": {
           "scope": "OAuth2/OpenID scope to request from the provider",
-          "username_field": "Claim to use as the Home Assistant username, for example `preferred_username` or `email`"
+          "username_field": "Claim to use as the Home Assistant username, for example `preferred_username` or `email`",
+          "displayname_field": "Claim to use as the display name of new users, for example `name` or `given_name`. Leave empty to use `name`, then `preferred_username`"
         },
-        "description": "Choose which claims to request and which user info field should become the Home Assistant username."
+        "description": "Choose which claims to request and which user info fields should become the Home Assistant username and display name."
       },
       "provider": {
         "data": {

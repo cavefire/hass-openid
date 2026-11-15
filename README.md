@@ -52,6 +52,7 @@ Keep your client ID and client secret ready before starting the integration flow
 6. Configure identity mapping:
   - **Requested scope** (default: `openid profile email`)
   - **Username field** (default: `preferred_username`)
+  - **Display name field** (optional, default: `name`, then `preferred_username`)
 7. Configure advanced options:
   - **Block other login methods**
   - **Trusted IP CIDR blocks** (one CIDR block per line)

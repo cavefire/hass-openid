@@ -32,6 +32,7 @@ from .const import (
     CONF_AUTHORIZE_URL,
     CONF_BLOCK_LOGIN,
     CONF_CUSTOM_AUTH_PARAMS,
+    CONF_DISPLAYNAME_FIELD,
     CONF_POST_LOGOUT_URL,
     CONF_TRUSTED_CLIENT_IDS,
     CONF_TRUSTED_CLIENT_PATTERN,
@@ -90,6 +91,7 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(
                     CONF_USERNAME_FIELD, default=DEFAULT_USERNAME_FIELD
                 ): cv.string,
+                vol.Optional(CONF_DISPLAYNAME_FIELD): cv.string,
                 vol.Optional(CONF_CREATE_USER, default=False): cv.boolean,
                 vol.Optional(CONF_BLOCK_LOGIN, default=False): cv.boolean,
                 vol.Optional(CONF_ERROR_URL): cv.url,
