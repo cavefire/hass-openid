@@ -53,7 +53,7 @@ from .const import (
 )
 from .config_helpers import add_custom_auth_params
 from .oauth_helper import exchange_code_for_token, fetch_user_info
-from .http_helper import is_speculative_request,show_prerender
+from .http_helper import html_escape, is_speculative_request, js_string, show_prerender
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -261,19 +261,19 @@ class OpenIDAuthorizeView(HomeAssistantView):
         # Prepare template variables using Template.substitute
         client_state = params.get("client_state") or params.get("state")
         client_state_input = (
-            f'<input type="hidden" name="client_state" value="{client_state}">'
+            f'<input type="hidden" name="client_state" value="{html_escape(client_state)}">'
             if client_state
             else ""
         )
 
         template = Template(template_content)
         html = template.substitute(
-            state=consent_state,
-            client_id=params.get("client_id", "Unknown Application"),
-            redirect_uri=params.get("redirect_uri", ""),
-            base_url=params.get("base_url", ""),
+            state=html_escape(consent_state),
+            client_id=html_escape(params.get("client_id", "Unknown Application")),
+            redirect_uri=html_escape(params.get("redirect_uri", "")),
+            base_url=html_escape(params.get("base_url", "")),
             client_state_input=client_state_input,
-            cancel_url=params.get("base_url", "/"),
+            cancel_url=html_escape(js_string(params.get("base_url", "/"))),
         )
         return Response(status=HTTPStatus.OK, body=html, content_type="text/html")
         
@@ -978,7 +978,7 @@ def _android_waiting_response(
 ) -> Response:
     """Return Android waiting page that polls for callback completion."""
     safe_authorize_url = authorize_url.replace("'", "%27").replace('"', "%22")
-    safe_poll_state = poll_state.replace("'", "%27").replace('"', "%22")
+    safe_poll_state = js_string(poll_state)
 
     template_content = hass.data[DOMAIN]["android_waiting_template"]
     template = Template(template_content)

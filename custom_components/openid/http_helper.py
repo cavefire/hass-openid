@@ -2,6 +2,7 @@
 
 import base64
 from contextlib import suppress
+import html
 from http import HTTPStatus
 from ipaddress import IPv4Address, IPv6Address, ip_address
 import json
@@ -24,6 +25,22 @@ from .const import CONF_BLOCK_LOGIN, CONF_OPENID_TEXT, CONF_TRUSTED_IPS, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 type RequestIP = IPv4Address | IPv6Address
+
+
+def html_escape(value: str) -> str:
+    """Escape a value for HTML text or a quoted attribute."""
+    return html.escape(value, quote=True)
+
+
+def js_string(value: str) -> str:
+    """Escape a value for use inside a quoted JavaScript string in a <script> block."""
+    return (
+        json.dumps(value)[1:-1]
+        .replace("'", "\\u0027")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
 
 
 def _read_file_content(path: Path) -> str:
@@ -230,8 +247,9 @@ def override_authorize_route(hass: HomeAssistant) -> None:
         _LOGGER.debug("Redirecting to: %s", redirect_url)
 
         if is_android_client:
-            safe_redirect_url = redirect_url.replace("'", "%27").replace('"', "%22")
-            safe_state = android_client_state.replace("'", "%27").replace('"', "%22")
+            safe_redirect_url = html_escape(redirect_url)
+            js_redirect_url = js_string(redirect_url)
+            js_state = js_string(android_client_state)
             _LOGGER.debug(
                 "Serving Android wait-and-poll page for state: %s", android_client_state
             )
@@ -246,8 +264,8 @@ def override_authorize_route(hass: HomeAssistant) -> None:
                     "<p>Your browser will open for sign-in. Return to this page afterwards.</p>"
                     f"<p><a href='{safe_redirect_url}' target='_blank' rel='noopener noreferrer'>Open sign-in page</a></p>"
                     "<script>"
-                    f"const authUrl='{safe_redirect_url}';"
-                    f"const pollState='{safe_state}';"
+                    f"const authUrl='{js_redirect_url}';"
+                    f"const pollState='{js_state}';"
                     "const opened=window.open(authUrl,'_blank','noopener,noreferrer');"
                     "if(!opened){window.location.href=authUrl;}"
                     "const poll=async()=>{"
@@ -300,7 +318,7 @@ def show_prerender(
 ) -> Response:
     # make sure the alert_type and alert_message can be safely displayed
     conf: dict[str, Any] | None = hass.data.get(DOMAIN)
-    safe_current_url = current_url.replace("'", "%27").replace('"', "%22")
+    safe_current_url = js_string(current_url)
 
     template_content = hass.data[DOMAIN]["prerender_shim_template"]
     template = Template(template_content)

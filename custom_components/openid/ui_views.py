@@ -6,6 +6,7 @@ import base64
 from collections.abc import Mapping
 from contextlib import suppress
 from hashlib import sha256
+import hmac
 from http import HTTPStatus
 import inspect
 import json
@@ -13,6 +14,7 @@ import logging
 import secrets
 import re
 from string import Template
+import time
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -21,7 +23,7 @@ from yarl import URL
 
 from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
 from homeassistant.auth.models import Credentials, User
-from homeassistant.components.auth import DATA_STORE, create_auth_code
+from homeassistant.components.auth import DATA_STORE, create_auth_code, indieauth
 from homeassistant.components.http import KEY_HASS_USER, HomeAssistantView
 from homeassistant.const import CONF_CLIENT_ID, CONF_CLIENT_SECRET
 from homeassistant.core import HomeAssistant
@@ -31,7 +33,6 @@ from . import views as base_views
 from .config_helpers import add_custom_auth_params, get_active_config
 from .const import (
     CONF_AUTHORIZE_URL,
-    CONF_BLOCK_LOGIN,
     CONF_CREATE_USER,
     CONF_ERROR_URL,
     CONF_LOGOUT_URL,
@@ -51,11 +52,34 @@ from .const import (
     DOMAIN,
 )
 from .oauth_helper import exchange_code_for_token, fetch_user_info
-from .http_helper import is_speculative_request,show_prerender
+from .http_helper import (
+    _get_request_base_url,
+    html_escape,
+    is_speculative_request,
+    js_string,
+    show_prerender,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 _PKCE_VERIFIER_KEY = "pkce_code_verifier"
+
+# Binds a sign-in to the browser that started it, so a flow started by someone
+# else cannot be completed by sending its IdP link to a signed-in user. The
+# __Host- prefix keeps sibling subdomains from planting the cookie.
+_BROWSER_PARAM = "openid_browser_id"
+_BROWSER_COOKIE = "openid_browser"
+_BROWSER_COOKIE_SECURE = "__Host-openid_browser"
+_BROWSER_COOKIE_MAX_AGE = 3600
+_BROWSER_ID_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+
+_ANDROID_CONFIRM_KEY = "_openid_android_confirm"
+_ANDROID_CONFIRM_TTL = 600
+
+_VERIFY_REDIRECT_ALLOWS_LOOPBACK = (
+    "allow_loopback_port_change"
+    in inspect.signature(indieauth.verify_redirect_uri).parameters
+)
 OpenIDAndroidStatusView = base_views.OpenIDAndroidStatusView
 BaseOpenIDAuthorizeView = base_views.OpenIDAuthorizeView
 BaseOpenIDCallbackView = base_views.OpenIDCallbackView
@@ -77,7 +101,7 @@ def _android_waiting_response(
 ) -> Response:
     """Return Android waiting page that polls for callback completion."""
     safe_authorize_url = authorize_url.replace("'", "%27").replace('"', "%22")
-    safe_poll_state = poll_state.replace("'", "%27").replace('"', "%22")
+    safe_poll_state = js_string(poll_state)
 
     template_content = hass.data[DOMAIN]["android_waiting_template"]
     template = Template(template_content)
@@ -130,19 +154,109 @@ def _display_name(user_info: Mapping[str, Any], displayname_field: str | None) -
     )
 
 
+def _uses_pkce(params: Mapping[str, str]) -> bool:
+    """Return whether the client sent an S256 PKCE challenge."""
+    return bool(params.get("code_challenge")) and (
+        params.get("code_challenge_method") == "S256"
+    )
+
+
+async def _async_validate_client(
+    hass: HomeAssistant, params: Mapping[str, str]
+) -> str | None:
+    """Validate client_id, redirect_uri and PKCE like Home Assistant's login flow.
+
+    Return an error message, or None when the request is valid.
+    """
+    client_id = params.get("client_id")
+    redirect_uri = params.get("redirect_uri")
+    if not client_id or not indieauth.verify_client_id(client_id):
+        return "OpenID login failed! Invalid client_id."
+
+    if (
+        params.get("code_challenge") or params.get("code_challenge_method")
+    ) and not _uses_pkce(params):
+        return "OpenID login failed! Only S256 PKCE challenges are supported."
+
+    kwargs: dict[str, bool] = {}
+    if _VERIFY_REDIRECT_ALLOWS_LOOPBACK:
+        kwargs["allow_loopback_port_change"] = _uses_pkce(params)
+    if not redirect_uri or not await indieauth.verify_redirect_uri(
+        hass, client_id, redirect_uri, **kwargs
+    ):
+        return "OpenID login failed! Invalid redirect_uri for this client."
+
+    return None
+
+
+def _is_same_origin(first: str, second: str) -> bool:
+    """Return whether two absolute URLs share scheme, host and port."""
+    try:
+        return URL(first).origin() == URL(second).origin()
+    except ValueError:
+        return False
+
+
+def _resolve_base_url(
+    hass: HomeAssistant, request: Request, requested: str | None
+) -> str:
+    """Return the base URL for this sign-in, only accepting this host's origin."""
+    if requested:
+        try:
+            url = URL(requested)
+            if url.scheme in ("http", "https") and _is_same_origin(
+                requested, f"{url.scheme}://{request.host}"
+            ):
+                return str(url.origin())
+        except ValueError:
+            pass
+    return _get_request_base_url(hass, request)
+
+
+def _browser_cookie_name(request: Request) -> str:
+    """Return the browser binding cookie name for this request."""
+    return _BROWSER_COOKIE_SECURE if request.secure else _BROWSER_COOKIE
+
+
+def _get_browser_id(request: Request) -> str | None:
+    """Return the browser binding id sent with the request, if valid."""
+    value = request.cookies.get(_browser_cookie_name(request))
+    if value and _BROWSER_ID_RE.fullmatch(value):
+        return value
+    return None
+
+
+def _set_browser_cookie(request: Request, response: Response, browser_id: str) -> None:
+    """Attach the browser binding cookie to a response."""
+    response.set_cookie(
+        _browser_cookie_name(request),
+        browser_id,
+        max_age=_BROWSER_COOKIE_MAX_AGE,
+        path="/",
+        secure=request.secure,
+        httponly=True,
+        samesite="Lax",
+    )
+
+
+def _is_same_browser(request: Request, stored: Mapping[str, Any]) -> bool:
+    """Return whether the request comes from the browser that started the flow."""
+    expected = stored.get(_BROWSER_PARAM)
+    actual = _get_browser_id(request)
+    return bool(expected and actual and hmac.compare_digest(expected, actual))
+
+
 class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
     """Redirect to the IdP’s authorisation endpoint."""
 
     def should_show_consent_screen(self, params: Mapping[str, str]) -> bool:
-        """Determine whether to show the consent screen."""
+        """Determine whether to show the consent screen.
+
+        Third-party clients always get one: /auth/openid/authorize can be linked
+        to directly, so the Home Assistant login page cannot stand in for it.
+        """
         conf = get_active_config(self.hass)
         if not conf:
-            return False
-
-        if not conf.get(CONF_BLOCK_LOGIN, False):
-            _LOGGER.debug(
-                "block_login is disabled; skipping consent screen. HA will handle consent if needed"
-            )
             return False
 
         client_id = params.get("client_id")
@@ -186,10 +300,9 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
         with suppress(NoURLAvailableError):
             cloud_url = get_url(self.hass, allow_internal=False, require_cloud=True)
 
-        if client_id is not None and (
-            (external_url and client_id.startswith(external_url))
-            or (internal_url and client_id.startswith(internal_url))
-            or (cloud_url and client_id.startswith(cloud_url))
+        if client_id is not None and any(
+            url and _is_same_origin(client_id, url)
+            for url in (external_url, internal_url, cloud_url, params.get("base_url"))
         ):
             _LOGGER.debug(
                 "Request from Home Assistant frontend detected; skipping consent screen"
@@ -200,11 +313,18 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
 
     async def get(self, request: Request) -> Response:
         """Redirect the browser to the IdP’s authorisation endpoint."""
+        browser_id = _get_browser_id(request) or secrets.token_urlsafe(32)
+        response = await self._async_authorize(request, browser_id)
+        _set_browser_cookie(request, response, browser_id)
+        return response
+
+    async def _async_authorize(self, request: Request, browser_id: str) -> Response:
+        """Validate the client and start the sign-in at the IdP."""
         conf = get_active_config(self.hass)
         if conf is None:
             return _show_error(
                 self.hass,
-                request.rel_url.query,
+                {},
                 alert_type="error",
                 alert_message="OpenID login failed! Integration is not configured.",
             )
@@ -214,6 +334,22 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
 
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
+
+        if error := await _async_validate_client(self.hass, params):
+            _LOGGER.warning(
+                "Rejected OpenID authorize request for client_id %s: %s",
+                params.get("client_id"),
+                error,
+            )
+            return _show_error(
+                self.hass, {}, alert_type="error", alert_message=error
+            )
+
+        params = dict(params)
+        params["base_url"] = _resolve_base_url(
+            self.hass, request, params.get("base_url")
+        )
+        params[_BROWSER_PARAM] = browser_id
 
         if self.should_show_consent_screen(params):
             _LOGGER.info(
@@ -315,6 +451,15 @@ class OpenIDConsentView(BaseOpenIDConsentView):
 
         if not original_params:
             _LOGGER.error("Invalid or expired consent state: %s", consent_state)
+            return Response(
+                status=HTTPStatus.BAD_REQUEST, text="Invalid or expired consent"
+            )
+
+        if not _is_same_browser(request, original_params):
+            _LOGGER.warning(
+                "Rejected consent for client_id %s submitted from another browser",
+                original_params.get("client_id"),
+            )
             return Response(
                 status=HTTPStatus.BAD_REQUEST, text="Invalid or expired consent"
             )
@@ -424,6 +569,27 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
             )
 
         _LOGGER.debug("Found pending data: %s", dict(pending))
+
+        needs_confirmation = False
+        if not _is_same_browser(request, pending):
+            if not _is_android_client(pending.get("client_id")):
+                _LOGGER.warning(
+                    "Rejected OpenID callback for client_id %s: sign-in was "
+                    "started in another browser",
+                    pending.get("client_id"),
+                )
+                return _show_error(
+                    self.hass,
+                    {},
+                    alert_type="error",
+                    alert_message=(
+                        "OpenID login failed! Finish signing in in the same "
+                        "browser you started in."
+                    ),
+                )
+            # The Android app hands the IdP sign-in to an external browser, so
+            # the browser check cannot apply. Ask the user to confirm instead.
+            needs_confirmation = True
 
         oauth_client_state = pending.get("client_state") or pending.get("state")
         _LOGGER.debug(
@@ -614,6 +780,69 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
 
         await self._ensure_person_for_user(user, credential_data)
 
+        if needs_confirmation:
+            return self._android_confirm_response(
+                params, credentials, oauth_client_state, username
+            )
+
+        return self._complete_sign_in(params, credentials, oauth_client_state)
+
+    async def post(self, request: Request) -> Response:
+        """Finish an Android sign-in the user confirmed in the external browser."""
+        form_data = await request.post()
+        token = form_data.get("confirm")
+        confirmations = self.hass.data.get(_ANDROID_CONFIRM_KEY, {})
+        entry = confirmations.pop(token, None) if isinstance(token, str) else None
+        if entry is None or time.monotonic() - entry["created"] > _ANDROID_CONFIRM_TTL:
+            return _show_error(
+                self.hass,
+                {},
+                alert_type="error",
+                alert_message="OpenID login failed! The sign-in confirmation expired.",
+            )
+
+        return self._complete_sign_in(
+            entry["params"], entry["credentials"], entry["oauth_client_state"]
+        )
+
+    def _android_confirm_response(
+        self,
+        params: dict[str, Any],
+        credentials: Credentials,
+        oauth_client_state: str | None,
+        username: str,
+    ) -> Response:
+        """Ask the user to confirm an Android sign-in finished in another browser."""
+        confirmations = self.hass.data.setdefault(_ANDROID_CONFIRM_KEY, {})
+        now = time.monotonic()
+        for expired in [
+            token
+            for token, entry in confirmations.items()
+            if now - entry["created"] > _ANDROID_CONFIRM_TTL
+        ]:
+            confirmations.pop(expired)
+
+        token = secrets.token_urlsafe(24)
+        confirmations[token] = {
+            "created": now,
+            "params": params,
+            "credentials": credentials,
+            "oauth_client_state": oauth_client_state,
+        }
+
+        template = Template(self.hass.data[DOMAIN]["android_confirm_template"])
+        html = template.substitute(
+            confirm=html_escape(token), username=html_escape(username)
+        )
+        return Response(status=HTTPStatus.OK, content_type="text/html", text=html)
+
+    def _complete_sign_in(
+        self,
+        params: dict[str, Any],
+        credentials: Credentials,
+        oauth_client_state: str | None,
+    ) -> Response:
+        """Issue the Home Assistant auth code and send it to the client."""
         client_id = params.get("client_id")
         if client_id is None:
             _LOGGER.warning(
@@ -623,7 +852,7 @@ class OpenIDCallbackView(BaseOpenIDCallbackView):
 
         _LOGGER.debug(
             "User %s authenticated via OpenID, client_id=%s, redirect_uri=%s",
-            username,
+            credentials.data.get("username"),
             client_id,
             params.get("redirect_uri"),
         )

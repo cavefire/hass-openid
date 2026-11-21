@@ -326,6 +326,11 @@ async def _async_setup_shared(hass: HomeAssistant) -> None:
         android_completed_path.read_text, encoding="utf-8"
     )
 
+    android_confirm_path = Path(__file__).parent / "android_confirm_template.html"
+    domain_data["android_confirm_template"] = await asyncio.to_thread(
+        android_confirm_path.read_text, encoding="utf-8"
+    )
+
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
