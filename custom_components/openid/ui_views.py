@@ -80,6 +80,10 @@ _VERIFY_REDIRECT_ALLOWS_LOOPBACK = (
     "allow_loopback_port_change"
     in inspect.signature(indieauth.verify_redirect_uri).parameters
 )
+# Home Assistant 2026.11 requires the request origin to validate a client_id.
+_VERIFY_NEEDS_REQUEST_ORIGIN = (
+    "request_netloc" in inspect.signature(indieauth.verify_client_id).parameters
+)
 OpenIDAndroidStatusView = base_views.OpenIDAndroidStatusView
 BaseOpenIDAuthorizeView = base_views.OpenIDAuthorizeView
 BaseOpenIDCallbackView = base_views.OpenIDCallbackView
@@ -162,7 +166,7 @@ def _uses_pkce(params: Mapping[str, str]) -> bool:
 
 
 async def _async_validate_client(
-    hass: HomeAssistant, params: Mapping[str, str]
+    hass: HomeAssistant, request: Request, params: Mapping[str, str]
 ) -> str | None:
     """Validate client_id, redirect_uri and PKCE like Home Assistant's login flow.
 
@@ -170,7 +174,10 @@ async def _async_validate_client(
     """
     client_id = params.get("client_id")
     redirect_uri = params.get("redirect_uri")
-    if not client_id or not indieauth.verify_client_id(client_id):
+    origin: dict[str, str] = {}
+    if _VERIFY_NEEDS_REQUEST_ORIGIN:
+        origin = {"request_scheme": request.scheme, "request_netloc": request.host}
+    if not client_id or not indieauth.verify_client_id(client_id, **origin):
         return "OpenID login failed! Invalid client_id."
 
     if (
@@ -182,7 +189,7 @@ async def _async_validate_client(
     if _VERIFY_REDIRECT_ALLOWS_LOOPBACK:
         kwargs["allow_loopback_port_change"] = _uses_pkce(params)
     if not redirect_uri or not await indieauth.verify_redirect_uri(
-        hass, client_id, redirect_uri, **kwargs
+        hass, client_id, redirect_uri, **origin, **kwargs
     ):
         return "OpenID login failed! Invalid redirect_uri for this client."
 
@@ -335,7 +342,7 @@ class OpenIDAuthorizeView(BaseOpenIDAuthorizeView):
         _LOGGER.debug("OpenIDAuthorizeView received params: %s", dict(params))
         _LOGGER.debug("OpenIDAuthorizeView full URL: %s", request.url)
 
-        if error := await _async_validate_client(self.hass, params):
+        if error := await _async_validate_client(self.hass, request, params):
             _LOGGER.warning(
                 "Rejected OpenID authorize request for client_id %s: %s",
                 params.get("client_id"),
