@@ -129,6 +129,27 @@ const revokeFrontendAuth = async (hass) => {
   clearFrontendState();
 };
 
+// The logout confirmation dialog fires hass-logout before it closes. Once it
+// has closed, Home Assistant's dialog manager calls history.back(), and in
+// Chromium that same-document navigation cancels a redirect to the IdP that is
+// still pending. Wait until the dialog's history entry is gone (popstate), or
+// at most 1.5 seconds, before redirecting.
+const waitForDialogHistory = () =>
+  new Promise((resolve) => {
+    if (!window.history.state?.dialog) {
+      resolve();
+      return;
+    }
+    let timer;
+    const done = () => {
+      window.removeEventListener("popstate", done);
+      clearTimeout(timer);
+      resolve();
+    };
+    window.addEventListener("popstate", done);
+    timer = setTimeout(done, 1500);
+  });
+
 let handlingLogout = false;
 const performLogout = async (hass, redirectUrl) => {
   console.log("hass-openid: performing logout, redirect to:", redirectUrl);
@@ -136,6 +157,7 @@ const performLogout = async (hass, redirectUrl) => {
   if (!hass || !hass.auth) {
     console.log("hass-openid: no hass object, clearing state and redirecting");
     clearFrontendState();
+    await waitForDialogHistory();
     window.location.href = redirectUrl;
     return;
   }
@@ -150,6 +172,7 @@ const performLogout = async (hass, redirectUrl) => {
     clearFrontendState();
   }
 
+  await waitForDialogHistory();
   console.log("hass-openid: redirecting to:", redirectUrl);
   window.location.href = redirectUrl;
 };
